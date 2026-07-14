@@ -609,19 +609,35 @@ async def handle_discover(url: str) -> tuple[str, dict]:
     if not url.strip():
         return "Enter a URL to discover", gr.update(choices=[])
     parts = _parse_url_parts(url)
+    current_db = parts.get("database", "postgres")
     sys_url = f"postgresql://{parts['user']}:{parts['password']}@{parts['host']}:{parts['port']}/postgres"
     dbs = await pg.get_databases(sys_url)
     if not dbs or dbs[0].get("error"):
         dbs = await pg.get_databases(url.strip())
     if not dbs or dbs[0].get("error"):
-        return (f"\u274c {dbs[0]['error']}" if dbs else "No databases"), gr.update(choices=[])
+        return (f"\u274c {dbs[0]['error']}" if dbs else "No databases"), gr.update(choices=[], value=None)
     db_names = [d["name"] for d in dbs]
-    return f"\U0001f4e6 Found {len(dbs)} databases:\n" + "\n".join(f"  \u2022 `{d['name']}`" for d in dbs), gr.update(choices=db_names)
+    # Add checkmark to currently selected database
+    choices_with_check = []
+    for name in db_names:
+        if name == current_db:
+            choices_with_check.append(f"\u2705 {name}")
+        else:
+            choices_with_check.append(name)
+    # Set value to checked version if current_db exists
+    selected = f"\u2705 {current_db}" if current_db in db_names else None
+    return (
+        f"\U0001f4e6 Found {len(dbs)} databases:\n" + "\n".join(f"  \u2022 `{d['name']}`" for d in dbs),
+        gr.update(choices=choices_with_check, value=selected)
+    )
 
 
 def handle_db_select(db_name: str, current_url: str) -> str:
     if not db_name:
         return current_url
+    # Strip checkmark prefix if present
+    if db_name.startswith("\u2705 "):
+        db_name = db_name[2:]
     idx = current_url.rfind("/")
     if idx > 8:
         return current_url[: idx + 1] + db_name
@@ -1381,7 +1397,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                         interactive=True,
                         scale=1,
                         value=None,
-                        allow_custom_value=not _db_cfg.get("readonly", True),
+                        allow_custom_value=True,
                         elem_classes="saved-dd",
                     )
                 with gr.Row():
