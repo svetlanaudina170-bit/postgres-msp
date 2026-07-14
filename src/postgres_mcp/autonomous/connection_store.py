@@ -144,8 +144,7 @@ def match_by_server(url: str, conns: list[dict] = None) -> dict | None:
         conns = load_connections()
     for c in conns:
         cp = _parse_url_parts(c["value"])
-        if (cp["host"] == parts["host"] and cp["port"] == parts["port"]
-                and cp["user"] == parts["user"]):
+        if cp["host"] == parts["host"] and cp["port"] == parts["port"] and cp["user"] == parts["user"]:
             return c
     return None
 
@@ -156,8 +155,7 @@ def match_existing(url: str, conns: list[dict] = None) -> dict | None:
         conns = load_connections()
     for c in conns:
         cp = _parse_url_parts(c["value"])
-        if (cp["host"] == parts["host"] and cp["port"] == parts["port"]
-                and cp["user"] == parts["user"] and cp["database"] == parts["database"]):
+        if cp["host"] == parts["host"] and cp["port"] == parts["port"] and cp["user"] == parts["user"] and cp["database"] == parts["database"]:
             return c
     return None
 
@@ -165,15 +163,17 @@ def match_existing(url: str, conns: list[dict] = None) -> dict | None:
 def add_connection(value: str, key: str = None, conns: list[dict] = None) -> list[dict]:
     if conns is None:
         conns = load_connections()
-    conns.append({
-        "id": uuid.uuid4().hex[:8],
-        "key": (key or "").strip() or _make_key_from_url(value),
-        "value": value,
-        "pinned": False,
-        "default": False,
-        "use_count": 1,
-        "last_used": datetime.now(timezone.utc).isoformat(),
-    })
+    conns.append(
+        {
+            "id": uuid.uuid4().hex[:8],
+            "key": (key or "").strip() or _make_key_from_url(value),
+            "value": value,
+            "pinned": False,
+            "default": False,
+            "use_count": 1,
+            "last_used": datetime.now(timezone.utc).isoformat(),
+        }
+    )
     save_connections(conns)
     return conns
 
@@ -182,7 +182,7 @@ def set_default(conn_id: str, conns: list[dict] = None) -> list[dict]:
     if conns is None:
         conns = load_connections()
     for c in conns:
-        c["default"] = (c.get("id") == conn_id)
+        c["default"] = c.get("id") == conn_id
     save_connections(conns)
     return conns
 

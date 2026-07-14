@@ -23,6 +23,7 @@
 from dataclasses import dataclass
 from typing import Any, Tuple, Dict
 
+
 # Описание класса IndexDefinition
 #
 # Класс IndexDefinition представляет конфигурацию индекса в PostgreSQL.

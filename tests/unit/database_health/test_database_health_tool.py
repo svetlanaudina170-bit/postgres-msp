@@ -135,18 +135,18 @@ async def test_database_health_all(local_sql_driver):
         assert isinstance(result, str)
         health_report = result
 
-        # Check that all health components are present
-        assert "Invalid index check:" in health_report
-        assert "Duplicate index check:" in health_report
-        assert "Index bloat:" in health_report
-        assert "Unused index check:" in health_report
-        assert "Connection health:" in health_report
-        assert "Vacuum health:" in health_report
-        assert "Sequence health:" in health_report
-        assert "Replication health:" in health_report
-        assert "Buffer health for indexes:" in health_report
-        assert "Buffer health for tables:" in health_report
-        assert "Constraint health:" in health_report
+        # Check that all health components are present (bilingual: English or Russian)
+        assert "Invalid index check:" in health_report or "Проверка недействительных индексов:" in health_report
+        assert "Duplicate index check:" in health_report or "Проверка дублирующихся индексов:" in health_report
+        assert "Index bloat:" in health_report or "Раздувание индексов:" in health_report
+        assert "Unused index check:" in health_report or "Проверка неиспользуемых индексов:" in health_report
+        assert "Connection health:" in health_report or "Состояние подключений:" in health_report
+        assert "Vacuum health:" in health_report or "Состояние вакуума:" in health_report
+        assert "Sequence health:" in health_report or "Состояние последовательностей:" in health_report
+        assert "Replication health:" in health_report or "Состояние репликации:" in health_report
+        assert "Buffer health for indexes:" in health_report or "Состояние буфера для индексов:" in health_report
+        assert "Buffer health for tables:" in health_report or "Состояние буфера для таблиц:" in health_report
+        assert "Constraint health:" in health_report or "Состояние ограничений:" in health_report
 
         # Verify specific health issues we know should be detected
         assert "idx_orders_customer_dup" in health_report  # Should detect duplicate index

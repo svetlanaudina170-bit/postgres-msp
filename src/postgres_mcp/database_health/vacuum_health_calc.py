@@ -33,6 +33,7 @@ from typing import List, Dict, Any, Union
 
 from ..sql import SafeSqlDriver, SqlDriver
 
+
 # Описание класса TransactionIdMetrics
 #
 # Класс TransactionIdMetrics — это класс, который хранит метрики транзакционных идентификаторов
@@ -45,6 +46,7 @@ class TransactionIdMetrics:
     table: str
     transactions_left: int
     is_healthy: bool
+
 
 # Описание класса VacuumHealthCalc
 #

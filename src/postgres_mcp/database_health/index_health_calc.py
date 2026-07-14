@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 
 from ..sql import SafeSqlDriver, SqlDriver
 
+
 # Описание класса IndexHealthCalc
 #
 # Класс IndexHealthCalc предоставляет методы для анализа состояния индексов в базе данных
@@ -282,9 +283,7 @@ class IndexHealthCalc:
         for idx in bloated_indexes_dicts:
             bloat_mb: float = int(idx["bloat_bytes"]) / (1024 * 1024)
             total_mb: float = int(idx["index_bytes"]) / (1024 * 1024)
-            result.append(
-                f"Индекс '{idx['index']}' на таблице '{idx['table']}' имеет раздувание {bloat_mb:.1f}MB из общего размера {total_mb:.1f}MB"
-            )
+            result.append(f"Индекс '{idx['index']}' на таблице '{idx['table']}' имеет раздувание {bloat_mb:.1f}MB из общего размера {total_mb:.1f}MB")
 
         return "\n".join(result)
 

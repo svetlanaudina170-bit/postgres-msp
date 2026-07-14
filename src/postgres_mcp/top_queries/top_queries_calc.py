@@ -48,6 +48,7 @@ install_pg_stat_statements_message: str = (
     "но это обычно незначительно, если только база не находится под экстремальной нагрузкой."
 )
 
+
 # Описание класса TopQueriesCalc
 #
 # Класс TopQueriesCalc предоставляет методы для извлечения медленных или ресурсоемких SQL запросов
@@ -71,11 +72,7 @@ class TopQueriesCalc:
         # Сохранение SQL драйвера
         self.sql_driver = sql_driver
 
-    async def get_top_queries_by_time(
-        self,
-        limit: int = 10,
-        sort_by: Literal["total", "mean"] = "mean"
-    ) -> str:
+    async def get_top_queries_by_time(self, limit: int = 10, sort_by: Literal["total", "mean"] = "mean") -> str:
         """
         Описание метода get_top_queries_by_time:
         Возвращает список самых медленных SQL запросов на основе времени выполнения.

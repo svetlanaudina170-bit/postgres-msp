@@ -88,7 +88,7 @@ from mcp.server.fastmcp import FastMCP
 # mcp_server.py лежит в src/postgres_mcp/autonomous/, .env — в корне проекта
 # (4 уровня вверх), т.е. по той же схеме, что и в app.py.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-ENV_PATH = os.path.join(_PROJECT_ROOT, '.env')
+ENV_PATH = os.path.join(_PROJECT_ROOT, ".env")
 load_dotenv(ENV_PATH)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [MCP] %(message)s")
@@ -100,6 +100,7 @@ MCP_SERVER_HOST = os.getenv("MCP_SERVER_HOST", "127.0.0.1")
 MCP_SERVER_PORT = int(os.getenv("MCP_SERVER_PORT", "8100"))
 
 _PG_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
 
 def _validate_identifier(name: str, label: str = "identifier") -> str:
     """Проверяет, что name является валидным PostgreSQL-идентификатором
@@ -121,6 +122,7 @@ async def get_pg():
     global pg
     if pg is None:
         from .pg_client import PostgresClient
+
         pg = PostgresClient()
         if DATABASE_URL:
             err = await pg.connect(DATABASE_URL)
@@ -149,9 +151,7 @@ async def list_schemas(database_url: Optional[str] = None) -> str:
     """
     pg_client = await get_pg()
     await _ensure_connected(pg_client, database_url)
-    r = await pg_client.execute_sql(
-        "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name"
-    )
+    r = await pg_client.execute_sql("SELECT schema_name FROM information_schema.schemata ORDER BY schema_name")
     if r.error:
         return f"Error: {r.error}"
     return json.dumps([{"schema_name": row[0]} for row in r.rows], default=str)
@@ -207,10 +207,7 @@ async def get_object_details(
     )
     if r.error:
         return f"Error: {r.error}"
-    columns = [
-        {"column": row[0], "data_type": row[1], "is_nullable": row[2], "column_default": row[3]}
-        for row in r.rows
-    ]
+    columns = [{"column": row[0], "data_type": row[1], "is_nullable": row[2], "column_default": row[3]} for row in r.rows]
     return json.dumps({"name": object_name, "columns": columns}, default=str)
 
 
@@ -253,9 +250,7 @@ async def explain_query(
     explain_format = os.getenv("EXPLAIN_FORMAT", "JSON")
     if analyze is None:
         analyze = os.getenv("EXPLAIN_ANALYZE", "false").lower() == "true"
-    r = await pg_client.execute_sql(
-        f"EXPLAIN (FORMAT {explain_format}, ANALYZE {str(bool(analyze)).lower()}) {sql}"
-    )
+    r = await pg_client.execute_sql(f"EXPLAIN (FORMAT {explain_format}, ANALYZE {str(bool(analyze)).lower()}) {sql}")
     if r.error or not r.rows:
         return f"Error: {r.error}"
     return r.rows[0][0][0]

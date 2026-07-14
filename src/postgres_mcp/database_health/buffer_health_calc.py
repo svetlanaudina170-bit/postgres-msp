@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from ..sql import SqlDriver
 
+
 # Описание класса BufferHealthCalc
 #
 # Класс BufferHealthCalc предоставляет методы для расчета показателей hit rate кэша для индексов

@@ -103,7 +103,7 @@ jobs:
           PGDATABASE: postgres
         run: |
           psql -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
-          psql -c "CREATE EXTENSION IF NOT EXISTS hypopg;"
+          psql -c "CREATE EXTENSION IF NOT EXISTS hypopg;" || echo "hypopg not available, skipping"
 
       - name: Run integration tests
         env:

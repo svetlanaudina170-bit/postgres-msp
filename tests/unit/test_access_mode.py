@@ -43,9 +43,7 @@ async def test_get_sql_driver_returns_correct_driver(access_mode, expected_drive
 async def test_get_sql_driver_sets_timeout_in_restricted_mode(mock_db_connection):
     """Test that get_sql_driver sets the timeout in restricted mode."""
     with patch("postgres_mcp.server.db_connection", mock_db_connection):
-        driver = await get_sql_driver(
-            database_url="postgresql://user:pass@localhost/db", access_mode=AccessMode.RESTRICTED.value
-        )
+        driver = await get_sql_driver(database_url="postgresql://user:pass@localhost/db", access_mode=AccessMode.RESTRICTED.value)
         assert isinstance(driver, SafeSqlDriver)
         assert driver.timeout == 30
         assert hasattr(driver, "sql_driver")
@@ -55,8 +53,6 @@ async def test_get_sql_driver_sets_timeout_in_restricted_mode(mock_db_connection
 async def test_get_sql_driver_in_unrestricted_mode_no_timeout(mock_db_connection):
     """Test that get_sql_driver in unrestricted mode is a regular SqlDriver."""
     with patch("postgres_mcp.server.db_connection", mock_db_connection):
-        driver = await get_sql_driver(
-            database_url="postgresql://user:pass@localhost/db", access_mode=AccessMode.UNRESTRICTED.value
-        )
+        driver = await get_sql_driver(database_url="postgresql://user:pass@localhost/db", access_mode=AccessMode.UNRESTRICTED.value)
         assert isinstance(driver, SqlDriver)
         assert not hasattr(driver, "timeout")

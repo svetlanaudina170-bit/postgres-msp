@@ -27,12 +27,8 @@ async def test_force_readonly_enforcement():
     mock_execute.return_value = [SqlDriver.RowResult(cells={"test": "value"})]
 
     # Test UNRESTRICTED mode
-    with patch("postgres_mcp.server.db_connection", mock_conn_pool), patch.object(
-        SqlDriver, "_execute_with_connection", mock_execute
-    ):
-        driver = await get_sql_driver(
-            database_url="postgresql://user:pass@localhost/db", access_mode=AccessMode.UNRESTRICTED.value
-        )
+    with patch("postgres_mcp.server.db_connection", mock_conn_pool), patch.object(SqlDriver, "_execute_with_connection", mock_execute):
+        driver = await get_sql_driver(database_url="postgresql://user:pass@localhost/db", access_mode=AccessMode.UNRESTRICTED.value)
         assert isinstance(driver, SqlDriver)
         assert not isinstance(driver, SafeSqlDriver)
 
@@ -58,12 +54,8 @@ async def test_force_readonly_enforcement():
         assert mock_execute.call_args[0][3] is False
 
     # Test RESTRICTED mode
-    with patch("postgres_mcp.server.db_connection", mock_conn_pool), patch.object(
-        SqlDriver, "_execute_with_connection", mock_execute
-    ):
-        driver = await get_sql_driver(
-            database_url="postgresql://user:pass@localhost/db", access_mode=AccessMode.RESTRICTED.value
-        )
+    with patch("postgres_mcp.server.db_connection", mock_conn_pool), patch.object(SqlDriver, "_execute_with_connection", mock_execute):
+        driver = await get_sql_driver(database_url="postgresql://user:pass@localhost/db", access_mode=AccessMode.RESTRICTED.value)
         assert isinstance(driver, SafeSqlDriver)
 
         # Test default behavior

@@ -53,6 +53,7 @@ logger = logging.getLogger(__name__)
 # Константа для ограничения количества анализируемых запросов
 MAX_NUM_INDEX_TUNING_QUERIES: int = 10
 
+
 def pp_list(lst: List[Any]) -> str:
     """
     Описание функции pp_list:
@@ -65,6 +66,7 @@ def pp_list(lst: List[Any]) -> str:
         str: Отформатированная строка
     """
     return ("\n  - " if len(lst) > 0 else "") + "\n  - ".join([str(item) for item in lst])
+
 
 # Описание класса IndexRecommendation
 #
@@ -149,6 +151,7 @@ class IndexRecommendation:
         """Возвращает детальное строковое представление объекта."""
         return f"{self._definition!r} (estimated_size_bytes: {self.estimated_size_bytes})"
 
+
 # Описание класса IndexRecommendationAnalysis
 #
 # Класс IndexRecommendationAnalysis содержит анализ рекомендации по индексу с оценкой выгоды.
@@ -215,6 +218,7 @@ class IndexRecommendationAnalysis:
         """Возвращает объект IndexRecommendation."""
         return self.index_recommendation
 
+
 # Описание класса IndexTuningResult
 #
 # Класс IndexTuningResult хранит результаты анализа оптимизации индексов.
@@ -230,6 +234,7 @@ class IndexTuningResult:
     error: Optional[str] = None
     dta_traces: List[str] = field(default_factory=list)
 
+
 def candidate_str(indexes: Iterable[IndexDefinition] | Iterable[IndexRecommendation] | Iterable[IndexRecommendationAnalysis]) -> str:
     """
     Описание функции candidate_str:
@@ -242,6 +247,7 @@ def candidate_str(indexes: Iterable[IndexDefinition] | Iterable[IndexRecommendat
         str: Отформатированная строка
     """
     return ", ".join(f"{idx.table}({','.join(idx.columns)})" for idx in indexes) if indexes else "(no indexes)"
+
 
 # Описание класса IndexTuningBase
 #
@@ -318,9 +324,7 @@ class IndexTuningBase(ABC):
             elif query_list:
                 logger.debug(f"Использование предоставленного списка с {len(query_list)} запросами")
                 session.workload_source = "query_list"
-                session.workload = [
-                    {"query": query, "queryid": f"direct-{i}"} for i, query in enumerate(query_list)
-                ]
+                session.workload = [{"query": query, "queryid": f"direct-{i}"} for i, query in enumerate(query_list)]
             elif sql_file:
                 logger.debug(f"Чтение запросов из файла: {sql_file}")
                 session.workload_source = "sql_file"
@@ -372,9 +376,7 @@ class IndexTuningBase(ABC):
             session.error = hypopg_message
             return session
 
-        result = await self.sql_driver.execute_query(
-            "SELECT s.last_analyze FROM pg_stat_user_tables s ORDER BY s.last_analyze LIMIT 1;"
-        )
+        result = await self.sql_driver.execute_query("SELECT s.last_analyze FROM pg_stat_user_tables s ORDER BY s.last_analyze LIMIT 1;")
         if not result or not any(row.cells.get("last_analyze") is not None for row in result):
             error_message: str = (
                 "Статистика устарела. Сначала необходимо выполнить анализ базы данных. "
@@ -465,9 +467,7 @@ class IndexTuningBase(ABC):
             return existing_plan
 
         explain_plan_tool = ExplainPlanTool(self.sql_driver)
-        plan: Dict[str, Any] = await explain_plan_tool.generate_explain_plan_with_hypothetical_indexes(
-            query_text, indexes, False, self
-        )
+        plan: Dict[str, Any] = await explain_plan_tool.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, False, self)
         self._explain_plans_cache[cache_key] = plan
         return plan
 
@@ -489,9 +489,7 @@ class IndexTuningBase(ABC):
             with open(file_path) as f:
                 content: str = f.read()
             query_texts: List[str] = [q.strip() for q in content.split(";") if q.strip()]
-            queries: List[Dict[str, Any]] = [
-                {"queryid": i, "query": text} for i, text in enumerate(query_texts)
-            ]
+            queries: List[Dict[str, Any]] = [{"queryid": i, "query": text} for i, text in enumerate(query_texts)]
             return queries
         except Exception as e:
             raise ValueError(f"Ошибка при загрузке запросов из файла {file_path}") from e
@@ -695,9 +693,7 @@ class IndexTuningBase(ABC):
             progressive_cost: float = await self._evaluate_configuration_cost(
                 query_weights, frozenset(idx.index_definition for idx in indexes_so_far)
             )
-            individual_cost: float = await self._evaluate_configuration_cost(
-                query_weights, frozenset([index_config.index_definition])
-            )
+            individual_cost: float = await self._evaluate_configuration_cost(query_weights, frozenset([index_config.index_definition]))
             size: int = await self._estimate_index_size(index_config.table, list(index_config.columns))
 
             if budget_bytes < 0 or total_size + size <= budget_bytes:
@@ -806,9 +802,7 @@ class IndexTuningBase(ABC):
         return 10 * 1024 * 1024  # 10 МБ по умолчанию
 
     @abstractmethod
-    async def _generate_recommendations(
-        self, query_weights: List[Tuple[str, SelectStmt, float]]
-    ) -> Tuple[Set[IndexRecommendation], float]:
+    async def _generate_recommendations(self, query_weights: List[Tuple[str, SelectStmt, float]]) -> Tuple[Set[IndexRecommendation], float]:
         """
         Описание метода _generate_recommendations:
         Абстрактный метод для генерации рекомендаций по индексам.

@@ -24,5 +24,5 @@ from .top_queries_calc import TopQueriesCalc  # Импорт класса TopQue
 # Определение экспортируемых элементов модуля
 __all__: list[str] = [
     "PG_STAT_STATEMENTS",  # Константа для имени расширения PostgreSQL
-    "TopQueriesCalc",      # Класс для анализа запросов
+    "TopQueriesCalc",  # Класс для анализа запросов
 ]

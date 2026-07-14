@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ..sql.sql_driver import SqlDriver
 
+
 # Описание класса ExplainPlanTool
 #
 # Класс ExplainPlanTool предоставляет инструменты для генерации и анализа планов выполнения PostgreSQL.
@@ -170,9 +171,7 @@ class ExplainPlanTool:
             )
 
             modified_sql_query, use_generic_plan = await self.replace_query_parameters_if_needed(sql_query)
-            plan_data: Dict[str, Any] = await self.generate_explain_plan_with_hypothetical_indexes(
-                modified_sql_query, indexes, use_generic_plan
-            )
+            plan_data: Dict[str, Any] = await self.generate_explain_plan_with_hypothetical_indexes(modified_sql_query, indexes, use_generic_plan)
 
             if not plan_data or not isinstance(plan_data, dict) or "Plan" not in plan_data:
                 return ErrorResult("Не удалось сгенерировать валидный план выполнения с гипотетическими индексами")
@@ -212,9 +211,7 @@ class ExplainPlanTool:
         """
         return bool(re.search(r"\bLIKE\b", query, re.IGNORECASE))
 
-    async def _run_explain_query(
-        self, query: str, analyze: bool = False, generic_plan: bool = False
-    ) -> ExplainPlanArtifact | ErrorResult:
+    async def _run_explain_query(self, query: str, analyze: bool = False, generic_plan: bool = False) -> ExplainPlanArtifact | ErrorResult:
         """
         Описание метода _run_explain_query:
         Выполняет запрос EXPLAIN для указанного SQL-запроса.

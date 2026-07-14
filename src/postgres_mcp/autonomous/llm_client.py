@@ -123,11 +123,11 @@ class LLMClient:
         msg = choice["message"]
         usage = data.get("usage", {})
         tool_calls = [
-            {"id": tc["id"], "name": tc["function"]["name"], "arguments": json.loads(tc["function"]["arguments"])}
-            for tc in msg.get("tool_calls", [])
+            {"id": tc["id"], "name": tc["function"]["name"], "arguments": json.loads(tc["function"]["arguments"])} for tc in msg.get("tool_calls", [])
         ]
         return LLMResponse(
-            content=msg.get("content"), tool_calls=tool_calls,
+            content=msg.get("content"),
+            tool_calls=tool_calls,
             input_tokens=usage.get("prompt_tokens", 0),
             output_tokens=usage.get("completion_tokens", 0),
             finish_reason=choice.get("finish_reason", "stop"),
@@ -149,9 +149,9 @@ class LLMClient:
         text = "\n".join(b["text"] for b in blocks if b.get("type") == "text")
         tool_calls = [{"id": b["id"], "name": b["name"], "arguments": b.get("input", {})} for b in blocks if b.get("type") == "tool_use"]
         usage = data.get("usage", {})
-        return LLMResponse(content=text or None, tool_calls=tool_calls,
-                           input_tokens=usage.get("input_tokens", 0),
-                           output_tokens=usage.get("output_tokens", 0))
+        return LLMResponse(
+            content=text or None, tool_calls=tool_calls, input_tokens=usage.get("input_tokens", 0), output_tokens=usage.get("output_tokens", 0)
+        )
 
     async def _chat_google(self, messages, system_prompt, tools, temperature, max_tokens):
         contents = [{"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]} for m in messages]

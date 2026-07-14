@@ -41,6 +41,7 @@ from .index_opt_base import IndexRecommendation, IndexTuningBase, candidate_str,
 # Инициализация логгера
 logger = logging.getLogger(__name__)
 
+
 # Описание класса DatabaseTuningAdvisor
 #
 # Класс DatabaseTuningAdvisor наследуется от IndexTuningBase и реализует оптимизацию индексов
@@ -100,9 +101,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         return elapsed > self.max_runtime_seconds
 
     @override
-    async def _generate_recommendations(
-        self, query_weights: List[Tuple[str, SelectStmt, float]]
-    ) -> Tuple[Set[IndexRecommendation], float]:
+    async def _generate_recommendations(self, query_weights: List[Tuple[str, SelectStmt, float]]) -> Tuple[Set[IndexRecommendation], float]:
         """
         Описание метода _generate_recommendations:
         Генерирует рекомендации по индексам, используя гибридный подход "seed + greedy"
@@ -129,21 +128,15 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
             self.dta_trace("Оценка начального набора:")
             current_cost: float = await self._evaluate_configuration_cost(query_weights, frozenset(seed))
-            candidate_indexes: Set[IndexRecommendation] = {
-                IndexRecommendation(c.table, tuple(c.columns), c.using) for c in all_candidates
-            }
-            final_indexes, final_cost = await self._enumerate_greedy(
-                query_weights, seed.copy(), current_cost, candidate_indexes - seed
-            )
+            candidate_indexes: Set[IndexRecommendation] = {IndexRecommendation(c.table, tuple(c.columns), c.using) for c in all_candidates}
+            final_indexes, final_cost = await self._enumerate_greedy(query_weights, seed.copy(), current_cost, candidate_indexes - seed)
 
             if final_cost < best_config[1]:
                 best_config = (final_indexes, final_cost)
 
         return best_config
 
-    async def generate_candidates(
-        self, workload: List[Tuple[str, SelectStmt, float]], existing_defs: Set[str]
-    ) -> List[IndexRecommendation]:
+    async def generate_candidates(self, workload: List[Tuple[str, SelectStmt, float]], existing_defs: Set[str]) -> List[IndexRecommendation]:
         """
         Описание метода generate_candidates:
         Генерирует кандидатов на индексы из рабочей нагрузки запросов с пакетным созданием.
@@ -177,12 +170,8 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                 for combo in combinations(col_list, width):
                     candidates.append(IndexRecommendation(table=table, columns=tuple(combo)))
 
-        filtered_candidates: List[IndexRecommendation] = [
-            c for c in candidates if not self._index_exists(c, existing_defs)
-        ]
-        condition_filtered1: List[IndexRecommendation] = self._filter_candidates_by_query_conditions(
-            workload, filtered_candidates
-        )
+        filtered_candidates: List[IndexRecommendation] = [c for c in candidates if not self._index_exists(c, existing_defs)]
+        condition_filtered1: List[IndexRecommendation] = self._filter_candidates_by_query_conditions(workload, filtered_candidates)
         condition_filtered: List[IndexRecommendation] = await self._filter_long_text_columns(condition_filtered1)
 
         self.dta_trace(f"Сгенерировано {len(candidates)} кандидатов")
@@ -192,9 +181,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
         if len(condition_filtered) > 0:
             query: str = "SELECT hypopg_create_index({});" * len(condition_filtered)
-            await SafeSqlDriver.execute_param_query(
-                self.sql_driver, query, [idx.definition for idx in condition_filtered]
-            )
+            await SafeSqlDriver.execute_param_query(self.sql_driver, query, [idx.definition for idx in condition_filtered])
 
             result = await self.sql_driver.execute_query(
                 "SELECT index_name, hypopg_relation_size(indexrelid) as index_size FROM hypopg_list_indexes;"
@@ -246,9 +233,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         current_space: int = base_relation_size + indexes_size
         current_time: float = current_cost
         current_objective: float = (
-            math.log(current_time) + alpha * math.log(current_space)
-            if current_cost > 0 and current_space > 0
-            else float("inf")
+            math.log(current_time) + alpha * math.log(current_space) if current_cost > 0 and current_space > 0 else float("inf")
         )
 
         self.dta_trace(
@@ -291,9 +276,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
                 time_improvement: float = (current_time - test_time) / current_time
                 if time_improvement < min_time_improvement:
-                    self.dta_trace(
-                        f"  - Пропуск кандидата: {candidate_str([candidate])}, так как улучшение времени ниже порога"
-                    )
+                    self.dta_trace(f"  - Пропуск кандидата: {candidate_str([candidate])}, так как улучшение времени ниже порога")
                     continue
 
                 test_objective: float = math.log(test_time) + alpha * math.log(test_space)
@@ -305,9 +288,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                     best_objective = test_objective
                     best_time_improvement = time_improvement
                 else:
-                    self.dta_trace(
-                        f"  - Пропуск кандидата: {candidate_str([candidate])}, так как улучшение целевой функции недостаточно"
-                    )
+                    self.dta_trace(f"  - Пропуск кандидата: {candidate_str([candidate])}, так как улучшение целевой функции недостаточно")
 
             if best_index is None:
                 self.dta_trace(f"ПОИСК ОСТАНОВЛЕН: Не найдены индексы с улучшением времени >= {min_time_improvement:.2%}")
@@ -394,9 +375,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
         return filtered_candidates
 
-    async def _filter_long_text_columns(
-        self, candidates: List[IndexRecommendation], max_text_length: int = 100
-    ) -> List[IndexRecommendation]:
+    async def _filter_long_text_columns(self, candidates: List[IndexRecommendation], max_text_length: int = 100) -> List[IndexRecommendation]:
         """
         Описание метода _filter_long_text_columns:
         Фильтрует индексы, содержащие длинные текстовые столбцы, на основе каталога.
@@ -554,11 +533,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         """
         try:
             index_stmt = node.IndexStmt if hasattr(node, "IndexStmt") else node
-            table_name: str = (
-                index_stmt.relation.relname
-                if hasattr(index_stmt.relation, "relname")
-                else index_stmt.relation.RangeVar.relname
-            )
+            table_name: str = index_stmt.relation.relname if hasattr(index_stmt.relation, "relname") else index_stmt.relation.RangeVar.relname
 
             columns: List[str] = []
             for idx_elem in index_stmt.indexParams:
@@ -603,7 +578,11 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                 return f"{func_name}({','.join(args)})"
 
             elif isinstance(expr, ColumnRef):
-                return ".".join([field.sval for field in expr.fields if hasattr(field, "sval")]) if hasattr(expr, "fields") and expr.fields else "unknown_column"
+                return (
+                    ".".join([field.sval for field in expr.fields if hasattr(field, "sval")])
+                    if hasattr(expr, "fields") and expr.fields
+                    else "unknown_column"
+                )
 
             elif hasattr(expr, "sval"):
                 return expr.sval
@@ -643,6 +622,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
             return False
 
         return True
+
 
 # Описание класса ConditionColumnCollector
 #

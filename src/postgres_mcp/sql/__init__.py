@@ -40,17 +40,17 @@ from .sql_driver import obfuscate_password  # Функция для маскир
 
 # Определение экспортируемых элементов модуля
 __all__: list[str] = [
-    "ColumnCollector",                    # Класс для сбора столбцов
-    "DbConnPool",                        # Класс для пула соединений
-    "IndexDefinition",                   # Класс для определения индексов
-    "SafeSqlDriver",                     # Класс для безопасного выполнения SQL
-    "SqlBindParams",                     # Класс для параметров SQL
-    "SqlDriver",                         # Класс для выполнения SQL
-    "TableAliasVisitor",                 # Класс для псевдонимов таблиц
-    "check_extension",                   # Функция проверки расширения
+    "ColumnCollector",  # Класс для сбора столбцов
+    "DbConnPool",  # Класс для пула соединений
+    "IndexDefinition",  # Класс для определения индексов
+    "SafeSqlDriver",  # Класс для безопасного выполнения SQL
+    "SqlBindParams",  # Класс для параметров SQL
+    "SqlDriver",  # Класс для выполнения SQL
+    "TableAliasVisitor",  # Класс для псевдонимов таблиц
+    "check_extension",  # Функция проверки расширения
     "check_hypopg_installation_status",  # Функция проверки hypopg
-    "check_postgres_version_requirement",# Функция проверки версии PostgreSQL
-    "get_postgres_version",              # Функция получения версии PostgreSQL
-    "obfuscate_password",                # Функция маскировки паролей
-    "reset_postgres_version_cache",      # Функция сброса кэша версии
+    "check_postgres_version_requirement",  # Функция проверки версии PostgreSQL
+    "get_postgres_version",  # Функция получения версии PostgreSQL
+    "obfuscate_password",  # Функция маскировки паролей
+    "reset_postgres_version_cache",  # Функция сброса кэша версии
 ]

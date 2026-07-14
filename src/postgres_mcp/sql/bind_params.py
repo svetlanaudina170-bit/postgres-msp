@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 # --- Классы для обработки AST ---
 
+
 # Описание класса TableAliasVisitor
 #
 # Класс TableAliasVisitor извлекает псевдонимы и имена таблиц из SQL AST.
@@ -94,7 +95,7 @@ class TableAliasVisitor(Visitor):
             if node.relname is not None:
                 self.tables.add(node.relname)
             # Добавление псевдонима
-            if node.alias and hasattr(node.alias, 'aliasname') and node.alias.aliasname is not None:
+            if node.alias and hasattr(node.alias, "aliasname") and node.alias.aliasname is not None:
                 self.aliases[node.alias.aliasname] = node.relname
 
     def visit_JoinExpr(self, ancestors: List[Node], node: Node) -> None:
@@ -116,6 +117,7 @@ class TableAliasVisitor(Visitor):
             # Обработка правого операнда
             if node.rarg is not None:
                 self(node.rarg)
+
 
 # Описание класса ColumnCollector
 #
@@ -429,6 +431,7 @@ class ColumnCollector(Visitor):
             if node.node:
                 self(node.node)
 
+
 # Описание класса SqlBindParams
 #
 # Класс SqlBindParams заменяет параметризованные заполнители ($1, $2) в запросах
@@ -556,7 +559,7 @@ class SqlBindParams:
                 if clause_start == -1:
                     clause_start = max(0, param_position - 100)
 
-                preceding_text: str = modified_query[clause_start:param_position + 2]
+                preceding_text: str = modified_query[clause_start : param_position + 2]
                 column_info = self._identify_parameter_column(preceding_text, table_columns)
                 if column_info:
                     table_name, column_name = column_info
@@ -565,7 +568,7 @@ class SqlBindParams:
                 else:
                     replacement = self._get_generic_replacement(preceding_text)
 
-                modified_query = modified_query[:match.start()] + replacement + modified_query[match.end():]
+                modified_query = modified_query[: match.start()] + replacement + modified_query[match.end() :]
 
             return modified_query
         except Exception as e:

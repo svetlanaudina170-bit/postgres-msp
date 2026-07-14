@@ -67,23 +67,38 @@ from dotenv import load_dotenv
 from .pg_client import PostgresClient
 from .llm_client import get_llm_client, build_llm_client_from_connection, LLMClient, LLMResponse
 from .connection_store import (
-    load_connections, build_choices, parse_display, find_by_key, find_by_value,
-    find_by_id, find_by_key_and_masked_value,
-    match_existing, match_by_server, add_connection,
-    update_connection, delete_connection, toggle_pin, bump_usage, update_key,
-    set_default, get_default, is_key_taken,
-    _make_key_from_url, _parse_url_parts, _mask_password,
+    load_connections,
+    build_choices,
+    parse_display,
+    find_by_key,
+    find_by_value,
+    find_by_id,
+    find_by_key_and_masked_value,
+    match_existing,
+    match_by_server,
+    add_connection,
+    update_connection,
+    delete_connection,
+    toggle_pin,
+    bump_usage,
+    update_key,
+    set_default,
+    get_default,
+    is_key_taken,
+    _make_key_from_url,
+    _parse_url_parts,
+    _mask_password,
 )
 from . import llm_connection_store as llm_conn_store
 from .crypto import is_encryption_enabled
 
 # Compute ENV_PATH before load_dotenv so it finds .env regardless of CWD
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-ENV_PATH = os.path.join(_PROJECT_ROOT, '.env')
-CONFIG_DIR = os.path.join(_PROJECT_ROOT, 'config')
-UI_SETTINGS_PATH = os.path.join(CONFIG_DIR, 'ui_settings.yaml')
-PROMPTS_PATH = os.path.join(CONFIG_DIR, 'prompts.yaml')
-PROVIDERS_PATH = os.path.join(CONFIG_DIR, 'providers.yaml')
+ENV_PATH = os.path.join(_PROJECT_ROOT, ".env")
+CONFIG_DIR = os.path.join(_PROJECT_ROOT, "config")
+UI_SETTINGS_PATH = os.path.join(CONFIG_DIR, "ui_settings.yaml")
+PROMPTS_PATH = os.path.join(CONFIG_DIR, "prompts.yaml")
+PROVIDERS_PATH = os.path.join(CONFIG_DIR, "providers.yaml")
 
 load_dotenv(ENV_PATH)
 
@@ -142,10 +157,18 @@ _UI_SETTINGS_FALLBACK = {
         "mode": {"label": "Mode", "choices": ["remote", "local"]},
         "provider": {"label": "Provider", "readonly": True, "choices": ["openai", "anthropic", "google", "local"]},
         "model": {
-            "label": "Model", "readonly": False,
+            "label": "Model",
+            "readonly": False,
             "models_by_provider": {
                 "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4o-turbo", "gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", "o1-mini", "o1-preview", "o3-mini"],
-                "anthropic": ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest", "claude-3-haiku-latest", "claude-2", "claude-instant-1.2"],
+                "anthropic": [
+                    "claude-3-5-sonnet-latest",
+                    "claude-3-5-haiku-latest",
+                    "claude-3-opus-latest",
+                    "claude-3-haiku-latest",
+                    "claude-2",
+                    "claude-instant-1.2",
+                ],
                 "google": ["gemini-2.0-flash", "gemini-2.0-pro-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-pro-001"],
                 "local": ["local-model"],
             },
@@ -191,8 +214,20 @@ _PROVIDERS_FALLBACK = {
             "llm_method": "anthropic",
             "params": {
                 "api_key": {"label": "API Key", "required": True, "secret": True, "placeholder": "sk-ant-..."},
-                "base_url": {"label": "Base URL", "required": False, "secret": False, "default": "https://api.anthropic.com/v1", "placeholder": "https://api.anthropic.com/v1"},
-                "anthropic_version": {"label": "anthropic-version", "required": True, "secret": False, "default": "2023-06-01", "placeholder": "2023-06-01"},
+                "base_url": {
+                    "label": "Base URL",
+                    "required": False,
+                    "secret": False,
+                    "default": "https://api.anthropic.com/v1",
+                    "placeholder": "https://api.anthropic.com/v1",
+                },
+                "anthropic_version": {
+                    "label": "anthropic-version",
+                    "required": True,
+                    "secret": False,
+                    "default": "2023-06-01",
+                    "placeholder": "2023-06-01",
+                },
             },
             "models_endpoint": None,
         },
@@ -201,22 +236,46 @@ _PROVIDERS_FALLBACK = {
             "llm_method": "google",
             "params": {
                 "api_key": {"label": "API Key", "required": True, "secret": True, "placeholder": "AIza..."},
-                "base_url": {"label": "Base URL", "required": False, "secret": False, "default": "https://generativelanguage.googleapis.com/v1beta", "placeholder": "https://generativelanguage.googleapis.com/v1beta"},
+                "base_url": {
+                    "label": "Base URL",
+                    "required": False,
+                    "secret": False,
+                    "default": "https://generativelanguage.googleapis.com/v1beta",
+                    "placeholder": "https://generativelanguage.googleapis.com/v1beta",
+                },
             },
             "models_endpoint": None,
         },
     },
-    "cloud": {"enabled": True, "providers": {
-        "openai": {"enabled": True, "label": "OpenAI", "connection_types": ["openai_compatible"],
-                   "models": {"openai_compatible": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["openai"]}},
-        "anthropic": {"enabled": True, "label": "Anthropic", "connection_types": ["anthropic_native"],
-                      "models": {"anthropic_native": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["anthropic"]}},
-        "google": {"enabled": True, "label": "Google", "connection_types": ["google_native"],
-                   "models": {"google_native": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["google"]}},
-    }},
-    "local": {"enabled": True, "providers": {
-        "lmstudio": {"enabled": True, "label": "LM Studio", "connection_types": ["openai_compatible"], "models": {"openai_compatible": []}},
-    }},
+    "cloud": {
+        "enabled": True,
+        "providers": {
+            "openai": {
+                "enabled": True,
+                "label": "OpenAI",
+                "connection_types": ["openai_compatible"],
+                "models": {"openai_compatible": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["openai"]},
+            },
+            "anthropic": {
+                "enabled": True,
+                "label": "Anthropic",
+                "connection_types": ["anthropic_native"],
+                "models": {"anthropic_native": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["anthropic"]},
+            },
+            "google": {
+                "enabled": True,
+                "label": "Google",
+                "connection_types": ["google_native"],
+                "models": {"google_native": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["google"]},
+            },
+        },
+    },
+    "local": {
+        "enabled": True,
+        "providers": {
+            "lmstudio": {"enabled": True, "label": "LM Studio", "connection_types": ["openai_compatible"], "models": {"openai_compatible": []}},
+        },
+    },
 }
 
 
@@ -225,7 +284,7 @@ def _load_yaml(path: str, fallback: dict) -> dict:
         logger.warning(f"Config file not found: {path}. Using built-in fallback.")
         return fallback
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return data if data else fallback
     except Exception as e:
@@ -255,6 +314,7 @@ def get_system_prompt() -> str:
 # ----------------------------------------------------------------------------
 # Catalog helpers: навигация по providers.yaml (mode -> provider -> conn_type -> models)
 # ----------------------------------------------------------------------------
+
 
 def _section_enabled(section: str) -> bool:
     """Видимость секции cloud/local с учётом .env-переопределений.
@@ -371,20 +431,20 @@ def _llm_conn_choices() -> list[str]:
 def save_env_file(updates: dict[str, str]) -> None:
     lines = []
     if os.path.exists(ENV_PATH):
-        with open(ENV_PATH, 'r', encoding='utf-8') as f:
+        with open(ENV_PATH, "r", encoding="utf-8") as f:
             lines = f.readlines()
     updated = set()
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if '=' in stripped and not stripped.startswith('#'):
-            key = stripped.split('=', 1)[0].strip()
+        if "=" in stripped and not stripped.startswith("#"):
+            key = stripped.split("=", 1)[0].strip()
             if key in updates:
                 lines[i] = f"{key}={updates[key]}\n"
                 updated.add(key)
     for key, val in updates.items():
         if key not in updated:
             lines.append(f"{key}={val}\n")
-    with open(ENV_PATH, 'w', encoding='utf-8') as f:
+    with open(ENV_PATH, "w", encoding="utf-8") as f:
         f.writelines(lines)
     load_dotenv(override=True)
 
@@ -392,9 +452,17 @@ def save_env_file(updates: dict[str, str]) -> None:
 pg = PostgresClient()
 
 POSTGRES_TOOLS = [
-    {"name": "execute_sql", "description": "Execute a SQL query", "parameters": {"type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"]}},
+    {
+        "name": "execute_sql",
+        "description": "Execute a SQL query",
+        "parameters": {"type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"]},
+    },
     {"name": "get_schema", "description": "Get full database schema", "parameters": {"type": "object", "properties": {}}},
-    {"name": "explain_query", "description": "Get execution plan", "parameters": {"type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"]}},
+    {
+        "name": "explain_query",
+        "description": "Get execution plan",
+        "parameters": {"type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"]},
+    },
     {"name": "get_health_report", "description": "Database health overview", "parameters": {"type": "object", "properties": {}}},
 ]
 
@@ -402,12 +470,17 @@ POSTGRES_TOOLS = [
 async def handle_tool(name: str, args: dict) -> str:
     if name == "execute_sql":
         r = await pg.execute_sql(args.get("sql", ""))
-        if r.error: return f"Error: {r.error}"
-        if not r.columns: return f"OK. {r.row_count} rows affected"
+        if r.error:
+            return f"Error: {r.error}"
+        if not r.columns:
+            return f"OK. {r.row_count} rows affected"
         return json.dumps([dict(zip(r.columns, row)) for row in r.rows], indent=2, default=str)
-    if name == "get_schema": return await pg.get_schema_text()
-    if name == "explain_query": return await pg.explain_query(args.get("sql", ""))
-    if name == "get_health_report": return await pg.get_health_report()
+    if name == "get_schema":
+        return await pg.get_schema_text()
+    if name == "explain_query":
+        return await pg.explain_query(args.get("sql", ""))
+    if name == "get_health_report":
+        return await pg.get_health_report()
     return f"Unknown tool: {name}"
 
 
@@ -436,23 +509,34 @@ async def chat_fn(message: str, history: list) -> tuple[str, list]:
     full = ""
     for _ in range(CHAT_MAX_TOOL_ITERATIONS):
         resp: LLMResponse = await llm.chat(
-            msgs, get_system_prompt(), POSTGRES_TOOLS,
-            temperature=chat_temperature, max_tokens=chat_max_tokens,
+            msgs,
+            get_system_prompt(),
+            POSTGRES_TOOLS,
+            temperature=chat_temperature,
+            max_tokens=chat_max_tokens,
         )
         if not resp.tool_calls:
             safe = (full + (resp.content or "")).replace("![", "[")
             new_history = history + [{"role": "assistant", "content": safe}]
             return "", new_history
-        msgs.append({"role": "assistant", "content": resp.content or "", "tool_calls": [{"id": t["id"], "name": t["name"], "arguments": t["arguments"]} for t in resp.tool_calls]})
+        msgs.append(
+            {
+                "role": "assistant",
+                "content": resp.content or "",
+                "tool_calls": [{"id": t["id"], "name": t["name"], "arguments": t["arguments"]} for t in resp.tool_calls],
+            }
+        )
         for tc in resp.tool_calls:
             text = await handle_tool(tc["name"], tc["arguments"])
             msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
-            if resp.content: full += resp.content + "\n"
+            if resp.content:
+                full += resp.content + "\n"
             full += f"\U0001f527 Used: `{tc['name']}`\n```\n{text[:CHAT_TOOL_RESULT_TRUNCATE]}\n```\n"
     return "", history + [{"role": "assistant", "content": full + "\n\n_Max iterations reached._"}]
 
 
 # --- Connection tab handlers (без изменений относительно v1.2.0) ---
+
 
 def _rebuild_saved_dd(conns: list[dict] = None, show_value: bool = False, value: str = None) -> dict:
     if conns is None:
@@ -634,43 +718,51 @@ def handle_set_default(display: str, show_val: bool) -> tuple[dict, str]:
 
 
 async def run_sql(sql: str) -> str:
-    if not pg.is_connected: return "Not connected"
-    if not sql.strip(): return "Enter a query"
+    if not pg.is_connected:
+        return "Not connected"
+    if not sql.strip():
+        return "Enter a query"
     r = await pg.execute_sql(sql.strip())
-    if r.error: return f"\u274c {r.error}"
+    if r.error:
+        return f"\u274c {r.error}"
     if r.columns:
         header = " | ".join(r.columns)
         sep = "-" * len(header)
         rows = "\n".join(" | ".join(str(c) if c is not None else "NULL" for c in row) for row in r.rows[:SQL_MAX_ROWS_DISPLAY])
-        extra = f"\n... +{len(r.rows)-SQL_MAX_ROWS_DISPLAY} rows" if len(r.rows) > SQL_MAX_ROWS_DISPLAY else ""
+        extra = f"\n... +{len(r.rows) - SQL_MAX_ROWS_DISPLAY} rows" if len(r.rows) > SQL_MAX_ROWS_DISPLAY else ""
         return f"\u2705 {r.row_count} rows in {r.duration_ms:.0f}ms\n\n{header}\n{sep}\n{rows}{extra}"
     return f"\u2705 OK. {r.row_count} affected in {r.duration_ms:.0f}ms"
 
 
 async def get_schema_display() -> str:
-    if not pg.is_connected: return "Not connected"
+    if not pg.is_connected:
+        return "Not connected"
     t = await pg.get_schema_text()
     return f"```\n{t}\n```" if t else "No tables"
 
 
 async def get_health_display() -> str:
-    if not pg.is_connected: return "Not connected"
+    if not pg.is_connected:
+        return "Not connected"
     return await pg.get_health_report()
 
 
 async def get_top_queries_display() -> str:
-    if not pg.is_connected: return "Not connected"
+    if not pg.is_connected:
+        return "Not connected"
     return await pg.get_top_queries()
 
 
 async def run_sql_explain(sql: str) -> str:
-    if not pg.is_connected: return "Not connected"
+    if not pg.is_connected:
+        return "Not connected"
     return await pg.explain_query(sql)
 
 
 # ----------------------------------------------------------------------------
 # LLM connection registry handlers (новое в v1.5.0)
 # ----------------------------------------------------------------------------
+
 
 def _active_display() -> str:
     conn = llm_conn_store.get_active_llm_connection(secret_fields_map=SECRET_FIELDS_MAP)
@@ -716,8 +808,12 @@ def open_modal_new() -> tuple[dict, str, str, str, str, str, str, str, str, str,
     first_ct = conn_types[0][0] if conn_types else ""
     models = _model_choices(first_provider, first_mode, first_ct)
     return _open_modal_with(
-        mode=first_mode, provider=first_provider, conn_type=first_ct, model=models[0] if models else "",
-        name="", conn_id="",
+        mode=first_mode,
+        provider=first_provider,
+        conn_type=first_ct,
+        model=models[0] if models else "",
+        name="",
+        conn_id="",
     )
 
 
@@ -758,6 +854,7 @@ def _open_modal_with(mode, provider, conn_type, model, name, conn_id="", params=
     # Видимость параметров
     fields = _param_fields_for_ct(conn_type)
     vis = {f: (f in fields) for f in ("api_key", "base_url", "folder_id", "anthropic_version")}
+
     # Значения параметров (дефолт + переданное)
     def _val(field):
         if field in params and params[field]:
@@ -765,7 +862,7 @@ def _open_modal_with(mode, provider, conn_type, model, name, conn_id="", params=
         return _param_default(conn_type, field, provider, mode)
 
     return (
-        gr.update(visible=True),                      # modal
+        gr.update(visible=True),  # modal
         gr.update(choices=_mode_choices(), value=mode),
         gr.update(choices=[pid for pid, _ in _provider_choices(mode)], value=provider),
         gr.update(choices=[ct for ct, _ in _conn_type_choices(provider, mode)], value=conn_type),
@@ -775,7 +872,7 @@ def _open_modal_with(mode, provider, conn_type, model, name, conn_id="", params=
         gr.update(value=_val("base_url"), visible=vis["base_url"]),
         gr.update(value=_val("folder_id"), visible=vis["folder_id"]),
         gr.update(value=_val("anthropic_version"), visible=vis["anthropic_version"]),
-        gr.update(value=conn_id),                     # скрытое поле id
+        gr.update(value=conn_id),  # скрытое поле id
         gr.update(visible=_models_endpoint(conn_type) is not None),  # fetch_btn
         gr.update(),  # fetch_status
         gr.update(),  # llm_status (общий)
@@ -812,9 +909,11 @@ def _on_provider_or_ct_change(mode, provider, conn_type) -> tuple:
     models = _model_choices(provider, mode, conn_type)
     fields = _param_fields_for_ct(conn_type)
     vis = {f: (f in fields) for f in ("api_key", "base_url", "folder_id", "anthropic_version")}
+
     # Дефолты параметров для нового conn_type
     def _val(field):
         return _param_default(conn_type, field, provider, mode)
+
     return (
         gr.update(choices=[ct for ct, _ in _conn_type_choices(provider, mode)], value=conn_type),
         gr.update(choices=models, value=models[0] if models else ""),
@@ -838,7 +937,8 @@ async def on_fetch_models(provider: str, mode: str, conn_type: str, api_key: str
         params["folder_id"] = folder_id
     tmp = LLMClient(
         llm_method=_conn_type_cfg(conn_type).get("llm_method", "openai"),
-        model="", params=params,
+        model="",
+        params=params,
         models_endpoint=_models_endpoint(conn_type),
         models_endpoint_format=_conn_type_cfg(conn_type).get("models_endpoint_format", "openai"),
     )
@@ -849,8 +949,15 @@ async def on_fetch_models(provider: str, mode: str, conn_type: str, api_key: str
 
 
 def save_connection(
-    mode: str, provider: str, conn_type: str, model: str, name: str,
-    api_key: str, base_url: str, folder_id: str, anthropic_version: str,
+    mode: str,
+    provider: str,
+    conn_type: str,
+    model: str,
+    name: str,
+    api_key: str,
+    base_url: str,
+    folder_id: str,
+    anthropic_version: str,
     conn_id: str,
 ) -> tuple[dict, str, str, str, str]:
     """Сохраняет (новое или существующее) подключение в реестр.
@@ -894,7 +1001,13 @@ def save_connection(
     else:
         # Проверка уникальности имени
         if llm_conn_store.is_name_taken(name, secret_fields_map=SECRET_FIELDS_MAP):
-            return gr.update(visible=True), f"\u26a0\ufe0f Name '{name}' already used. Choose a different name.", _active_display(), _active_display(), gr.update()
+            return (
+                gr.update(visible=True),
+                f"\u26a0\ufe0f Name '{name}' already used. Choose a different name.",
+                _active_display(),
+                _active_display(),
+                gr.update(),
+            )
         llm_conn_store.add_llm_connection(conn_record, make_active=True, secret_fields_map=SECRET_FIELDS_MAP)
         save_env_file({"ACTIVE_LLM_CONNECTION": name})
         msg = f"\u2705 Saved and activated '{name}'"
@@ -961,9 +1074,11 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             with gr.Row():
                 saved_dd = gr.Dropdown(
                     label=_saved_cfg.get("label", "Saved Connections"),
-                    choices=build_choices(conns, show_value=SHOW_VAL), value=initial_dd,
+                    choices=build_choices(conns, show_value=SHOW_VAL),
+                    value=initial_dd,
                     allow_custom_value=not _saved_cfg.get("readonly", False),
-                    scale=3, elem_classes="saved-dd",
+                    scale=3,
+                    elem_classes="saved-dd",
                 )
                 pin_btn = gr.Button("\U0001f4cc Pin", scale=1)
                 default_btn = gr.Button("\u2b50 Default", scale=1)
@@ -971,14 +1086,24 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 delete_btn = gr.Button("\U0001f5d1 Delete", scale=1)
             with gr.Row():
                 label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
-                track_cb = gr.Checkbox(label="\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", value=os.getenv("TRACK_CHANGES", "false").lower() == "true", scale=1)
-                show_value_cb = gr.Checkbox(label="\u041f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0442\u044c URL", value=os.getenv("SHOW_VALUE", "false").lower() == "true", scale=1)
+                track_cb = gr.Checkbox(
+                    label="\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435",
+                    value=os.getenv("TRACK_CHANGES", "false").lower() == "true",
+                    scale=1,
+                )
+                show_value_cb = gr.Checkbox(
+                    label="\u041f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0442\u044c URL",
+                    value=os.getenv("SHOW_VALUE", "false").lower() == "true",
+                    scale=1,
+                )
             save_btn = gr.Button("\U0001f4be Save This URL")
             with gr.Row():
                 url_input = gr.Textbox(label="URL", placeholder="postgresql://user:pass@host:5432/db", scale=3, value=db_url)
                 db_selector = gr.Dropdown(
                     label=_db_cfg.get("label", "Database"),
-                    choices=[], interactive=True, scale=1,
+                    choices=[],
+                    interactive=True,
+                    scale=1,
                     value=None,
                     allow_custom_value=not _db_cfg.get("readonly", True),
                     elem_classes="saved-dd",
@@ -996,9 +1121,13 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             pin_btn.click(fn=handle_pin_toggle, inputs=[saved_dd, show_value_cb], outputs=saved_dd, queue=False)
             default_btn.click(fn=handle_set_default, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, status_display], queue=False)
             rename_btn.click(fn=handle_rename, inputs=[saved_dd, label_input, show_value_cb], outputs=[saved_dd, status_display], queue=False)
-            delete_btn.click(fn=handle_delete, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, url_input, label_input, status_display], queue=False)
+            delete_btn.click(
+                fn=handle_delete, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, url_input, label_input, status_display], queue=False
+            )
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
-            connect_btn.click(fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False)
+            connect_btn.click(
+                fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False
+            )
             disconnect_btn.click(fn=handle_disconnect, outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False)
             db_selector.change(fn=handle_db_select, inputs=[db_selector, url_input], outputs=url_input, queue=False)
             show_value_cb.change(fn=handle_show_value_toggle, inputs=[show_value_cb, saved_dd], outputs=saved_dd, queue=False)
@@ -1054,8 +1183,11 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             with gr.Row():
                 llm_registry_dd = gr.Dropdown(
                     label="Connections",
-                    choices=_INITIAL_LLM_CHOICES, value=_INITIAL_LLM_DD,
-                    interactive=True, scale=3, elem_classes="saved-dd",
+                    choices=_INITIAL_LLM_CHOICES,
+                    value=_INITIAL_LLM_DD,
+                    interactive=True,
+                    scale=3,
+                    elem_classes="saved-dd",
                 )
                 llm_new_btn = gr.Button("\U0001f195 New", scale=1)
                 llm_edit_btn = gr.Button("\u270f Edit", scale=1)
@@ -1065,8 +1197,16 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
 
             gr.Markdown("### \u2699\ufe0f Generation Parameters")
             with gr.Row():
-                set_temp = gr.Slider(minimum=LLM_TEMP_MIN, maximum=LLM_TEMP_MAX, step=LLM_TEMP_STEP, value=float(os.getenv("LLM_TEMPERATURE", "0.3")), label="Temperature")
-                set_maxtokens = gr.Number(value=int(os.getenv("LLM_MAX_TOKENS", "2000")), label="Max Tokens", minimum=LLM_MAXTOKENS_MIN, maximum=LLM_MAXTOKENS_MAX, step=1)
+                set_temp = gr.Slider(
+                    minimum=LLM_TEMP_MIN,
+                    maximum=LLM_TEMP_MAX,
+                    step=LLM_TEMP_STEP,
+                    value=float(os.getenv("LLM_TEMPERATURE", "0.3")),
+                    label="Temperature",
+                )
+                set_maxtokens = gr.Number(
+                    value=int(os.getenv("LLM_MAX_TOKENS", "2000")), label="Max Tokens", minimum=LLM_MAXTOKENS_MIN, maximum=LLM_MAXTOKENS_MAX, step=1
+                )
             gr.Markdown("### \U0001f4dd System Prompt")
             set_sysprompt = gr.Textbox(value=get_system_prompt(), label="", lines=6)
             with gr.Row():
@@ -1075,10 +1215,10 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             llm_save_btn.click(
                 fn=lambda t, mt, sp: (
                     save_env_file({"LLM_TEMPERATURE": str(t), "LLM_MAX_TOKENS": str(mt), "LLM_SYSTEM_PROMPT": sp}),
-                    "\u2705 Saved to .env"
+                    "\u2705 Saved to .env",
                 ),
                 inputs=[set_temp, set_maxtokens, set_sysprompt],
-                outputs=[llm_param_status]
+                outputs=[llm_param_status],
             )
 
     # ------------------------------------------------------------------------
@@ -1109,15 +1249,37 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
 
     # --- Привязки обработчиков модала ---
     modal_mode.change(
-        fn=on_mode_change, inputs=modal_mode,
-        outputs=[modal_provider, modal_conn_type, modal_model, modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_fetch_btn, modal_fetch_status],
+        fn=on_mode_change,
+        inputs=modal_mode,
+        outputs=[
+            modal_provider,
+            modal_conn_type,
+            modal_model,
+            modal_apikey,
+            modal_baseurl,
+            modal_folder_id,
+            modal_anthropic_version,
+            modal_fetch_btn,
+            modal_fetch_status,
+        ],
     )
     modal_provider.change(
-        fn=on_provider_change, inputs=[modal_provider, modal_mode],
-        outputs=[modal_conn_type, modal_model, modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_fetch_btn, modal_fetch_status],
+        fn=on_provider_change,
+        inputs=[modal_provider, modal_mode],
+        outputs=[
+            modal_conn_type,
+            modal_model,
+            modal_apikey,
+            modal_baseurl,
+            modal_folder_id,
+            modal_anthropic_version,
+            modal_fetch_btn,
+            modal_fetch_status,
+        ],
     )
     modal_conn_type.change(
-        fn=on_conn_type_change, inputs=[modal_conn_type, modal_provider, modal_mode],
+        fn=on_conn_type_change,
+        inputs=[modal_conn_type, modal_provider, modal_mode],
         outputs=[modal_model, modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_fetch_btn, modal_fetch_status],
     )
     modal_fetch_btn.click(
@@ -1127,8 +1289,18 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
     )
     modal_save_btn.click(
         fn=save_connection,
-        inputs=[modal_mode, modal_provider, modal_conn_type, modal_model, modal_name,
-                modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_conn_id],
+        inputs=[
+            modal_mode,
+            modal_provider,
+            modal_conn_type,
+            modal_model,
+            modal_name,
+            modal_apikey,
+            modal_baseurl,
+            modal_folder_id,
+            modal_anthropic_version,
+            modal_conn_id,
+        ],
         outputs=[llm_modal, llm_status, chat_active_md, llmset_active_md, llm_registry_dd],
     )
     modal_cancel_btn.click(fn=close_modal, outputs=llm_modal)
@@ -1136,30 +1308,72 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
     # --- Кнопки реестра на вкладке LLM Settings ---
     llm_new_btn.click(
         fn=open_modal_new,
-        outputs=[llm_modal, modal_mode, modal_provider, modal_conn_type, modal_model, modal_name,
-                 modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_conn_id,
-                 modal_fetch_btn, modal_fetch_status, llm_status],
+        outputs=[
+            llm_modal,
+            modal_mode,
+            modal_provider,
+            modal_conn_type,
+            modal_model,
+            modal_name,
+            modal_apikey,
+            modal_baseurl,
+            modal_folder_id,
+            modal_anthropic_version,
+            modal_conn_id,
+            modal_fetch_btn,
+            modal_fetch_status,
+            llm_status,
+        ],
     )
     llm_edit_btn.click(
-        fn=open_modal_edit, inputs=llm_registry_dd,
-        outputs=[llm_modal, modal_mode, modal_provider, modal_conn_type, modal_model, modal_name,
-                 modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_conn_id,
-                 modal_fetch_btn, modal_fetch_status, llm_status],
+        fn=open_modal_edit,
+        inputs=llm_registry_dd,
+        outputs=[
+            llm_modal,
+            modal_mode,
+            modal_provider,
+            modal_conn_type,
+            modal_model,
+            modal_name,
+            modal_apikey,
+            modal_baseurl,
+            modal_folder_id,
+            modal_anthropic_version,
+            modal_conn_id,
+            modal_fetch_btn,
+            modal_fetch_status,
+            llm_status,
+        ],
     )
     # Chat Edit: открывает модал на редактирование АКТИВНОГО подключения.
     # open_modal_edit_active() не требует input — сама читает активное из реестра.
     chat_edit_btn.click(
         fn=open_modal_edit_active,
-        outputs=[llm_modal, modal_mode, modal_provider, modal_conn_type, modal_model, modal_name,
-                 modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_conn_id,
-                 modal_fetch_btn, modal_fetch_status, llm_status],
+        outputs=[
+            llm_modal,
+            modal_mode,
+            modal_provider,
+            modal_conn_type,
+            modal_model,
+            modal_name,
+            modal_apikey,
+            modal_baseurl,
+            modal_folder_id,
+            modal_anthropic_version,
+            modal_conn_id,
+            modal_fetch_btn,
+            modal_fetch_status,
+            llm_status,
+        ],
     )
     llm_setactive_btn.click(
-        fn=llm_set_active, inputs=llm_registry_dd,
+        fn=llm_set_active,
+        inputs=llm_registry_dd,
         outputs=[llm_registry_dd, chat_active_md, llmset_active_md],
     )
     llm_delete_btn.click(
-        fn=llm_delete_connection, inputs=llm_registry_dd,
+        fn=llm_delete_connection,
+        inputs=llm_registry_dd,
         outputs=[llm_registry_dd, chat_active_md, llmset_active_md, llm_status],
     )
 

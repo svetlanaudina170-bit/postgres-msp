@@ -30,6 +30,7 @@ from typing import List, Dict, Any, Optional
 
 from ..sql import SqlDriver
 
+
 # Описание класса ConstraintMetrics
 #
 # Класс ConstraintMetrics — это класс данных, который хранит метрики ограничений,
@@ -43,6 +44,7 @@ class ConstraintMetrics:
     name: str
     referenced_schema: Optional[str]
     referenced_table: Optional[str]
+
 
 # Описание класса ConstraintHealthCalc
 #
@@ -86,9 +88,7 @@ class ConstraintHealthCalc:
                     f"ссылается на '{metric.referenced_schema}.{metric.referenced_table}' и является недействительным"
                 )
             else:
-                result.append(
-                    f"Ограничение '{metric.name}' в таблице '{metric.schema}.{metric.table}' является недействительным"
-                )
+                result.append(f"Ограничение '{metric.name}' в таблице '{metric.schema}.{metric.table}' является недействительным")
         return "\n".join(result)
 
     async def _get_invalid_constraints(self) -> List[ConstraintMetrics]:

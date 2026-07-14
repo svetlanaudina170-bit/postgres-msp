@@ -32,6 +32,7 @@ from typing import Optional, List, Dict, Any
 
 from ..sql import SqlDriver
 
+
 # Описание класса ReplicationSlot
 #
 # Класс ReplicationSlot — это класс данных, который хранит информацию о слоте репликации,
@@ -43,6 +44,7 @@ class ReplicationSlot:
     slot_name: str
     database: str
     active: bool
+
 
 # Описание класса ReplicationMetrics
 #
@@ -56,6 +58,7 @@ class ReplicationMetrics:
     replication_lag_seconds: Optional[float]
     is_replicating: bool
     replication_slots: List[ReplicationSlot]
+
 
 # Описание класса ReplicationCalc
 #

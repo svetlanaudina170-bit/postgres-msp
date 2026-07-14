@@ -137,7 +137,9 @@ async def test_top_queries_pg12_mean_sort(mock_pg12_driver, mock_extension_insta
     result = await calc.get_top_queries_by_time(limit=3, sort_by="mean")
 
     # Check that the result contains the expected information
-    assert "Top 3 slowest queries by mean execution time per call" in result or "Топ 3 самых медленных запросов по среднему времени на вызов" in result
+    assert (
+        "Top 3 slowest queries by mean execution time per call" in result or "Топ 3 самых медленных запросов по среднему времени на вызов" in result
+    )
     # First query should be the one with highest mean_time
     assert "SELECT * FROM orders" in result
     # Verify the query used the correct column name for PG 12
@@ -173,7 +175,9 @@ async def test_top_queries_pg13_mean_sort(mock_pg13_driver, mock_extension_insta
     result = await calc.get_top_queries_by_time(limit=3, sort_by="mean")
 
     # Check that the result contains the expected information
-    assert "Top 3 slowest queries by mean execution time per call" in result or "Топ 3 самых медленных запросов по среднему времени на вызов" in result
+    assert (
+        "Top 3 slowest queries by mean execution time per call" in result or "Топ 3 самых медленных запросов по среднему времени на вызов" in result
+    )
     # First query should be the one with highest mean_exec_time
     assert "SELECT * FROM orders" in result
     # Verify the query used the correct column name for PG 13+

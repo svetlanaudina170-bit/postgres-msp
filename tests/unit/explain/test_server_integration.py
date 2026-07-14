@@ -67,7 +67,9 @@ async def test_explain_query_with_analyze_integration():
         with patch("postgres_mcp.server.get_sql_driver"):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
-                result = await explain_query(database_url="postgresql://user:pass@localhost/db", sql="SELECT * FROM users", analyze=True, hypothetical_indexes=None)
+                result = await explain_query(
+                    database_url="postgresql://user:pass@localhost/db", sql="SELECT * FROM users", analyze=True, hypothetical_indexes=None
+                )
 
                 # Verify result matches our expected plan data
                 assert isinstance(result, list)

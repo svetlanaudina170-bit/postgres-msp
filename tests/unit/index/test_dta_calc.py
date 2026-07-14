@@ -1261,7 +1261,12 @@ def test_explain_plan_diff():
     assert "17212" in diff_output
 
     # Verify it mentions the structural change
-    assert "sequential scans replaced" in diff_output or "new index scans" in diff_output or "сканирований заменены" in diff_output or "индексных сканирований" in diff_output
+    assert (
+        "sequential scans replaced" in diff_output
+        or "new index scans" in diff_output
+        or "сканирований заменены" in diff_output
+        or "индексных сканирований" in diff_output
+    )
 
     # Test with invalid plan data
     empty_diff = ExplainPlanArtifact.create_plan_diff({}, {})

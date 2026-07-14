@@ -35,6 +35,7 @@ from psycopg.sql import Identifier
 
 from ..sql import SafeSqlDriver, SqlDriver
 
+
 # Описание класса SequenceMetrics
 #
 # Класс SequenceMetrics — это класс данных, который хранит метрики последовательностей,
@@ -64,6 +65,7 @@ class SequenceMetrics:
             float: Процент использованных значений последовательности
         """
         return (self.last_value / self.max_value) * 100 if self.max_value else 0
+
 
 # Описание класса SequenceHealthCalc
 #

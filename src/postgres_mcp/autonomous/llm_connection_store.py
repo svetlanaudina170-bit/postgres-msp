@@ -148,7 +148,7 @@ def set_active_llm_connection(conn_id: str, secret_fields_map: dict = None) -> l
     Также очищает ACTIVE_LLM_CONNECTION в .env (чтобы не конфликтовать)."""
     conns = load_llm_connections(secret_fields_map=secret_fields_map)
     for c in conns:
-        c["active"] = (c.get("id") == conn_id)
+        c["active"] = c.get("id") == conn_id
     save_llm_connections(conns, secret_fields_map=secret_fields_map)
     return conns
 
@@ -226,5 +226,5 @@ def log_encryption_status():
             logger.warning(
                 "CONNECTIONS_ENCRYPTION_KEY не задан — секреты LLM-подключений "
                 "хранятся в llm_connections.json в ОТКРЫТОМ виде. "
-                "Сгенерируйте ключ: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+                'Сгенерируйте ключ: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
             )

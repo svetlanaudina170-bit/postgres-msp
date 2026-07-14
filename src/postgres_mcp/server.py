@@ -64,10 +64,12 @@ HYPOPG_EXTENSION: str = "hypopg"
 # Тип ответа
 ResponseType = List[Dict[str, Any]]
 
+
 # Режимы доступа
 class AccessMode(str, Enum):
     UNRESTRICTED = "unrestricted"
     RESTRICTED = "restricted"
+
 
 # Глобальные переменные
 db_connection: DbConnPool = DbConnPool()
@@ -85,6 +87,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 def configure_logging(logging_config: Dict[str, Any]):
     """Настройка логирования на основе параметров от клиента"""
     global file_handler
@@ -92,29 +95,30 @@ def configure_logging(logging_config: Dict[str, Any]):
     log_level = logging_config.get("logLevel", "INFO").upper()
     log_file = logging_config.get("logFile", "server.log")
     logs_path = logging_config.get("logsPath", "./logs")
-    
+
     # Установить уровень логирования
     logger.setLevel(getattr(logging, log_level, logging.INFO))
     logging.getLogger().setLevel(getattr(logging, log_level, logging.INFO))
-    
+
     # Удалить предыдущий FileHandler, если он существует
     if file_handler:
         logger.removeHandler(file_handler)
         file_handler.close()
-    
+
     if log_to_file:
         try:
             # Создаем директорию для логов
             os.makedirs(logs_path, exist_ok=True)
             log_file_path = os.path.join(logs_path, log_file)
-            file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
+            file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
             file_handler.setLevel(getattr(logging, log_level, logging.INFO))
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
             logger.info(f"File logging enabled to {log_file_path} with level {log_level}")
         except Exception as e:
             logger.error(f"Failed to configure file logging: {e}")
+
 
 @dataclass
 class MCPRequest:
@@ -122,6 +126,7 @@ class MCPRequest:
     id: Any
     method: str
     params: Dict[str, Any] = None
+
 
 @dataclass
 class MCPResponse:
@@ -131,21 +136,20 @@ class MCPResponse:
     error: Dict[str, Any] = None
 
     def to_dict(self):
-        response = {
-            "jsonrpc": self.jsonrpc,
-            "id": self.id
-        }
+        response = {"jsonrpc": self.jsonrpc, "id": self.id}
         if self.result is not None:
             response["result"] = self.result
         if self.error is not None:
             response["error"] = self.error
         return response
 
+
 @dataclass
 class MCPTool:
     name: str
     description: str
     inputSchema: Dict[str, Any]
+
 
 # Список инструментов
 AVAILABLE_TOOLS = [
@@ -155,19 +159,16 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе (например, postgresql://user:pass@localhost:5432/db)"
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе (например, postgresql://user:pass@localhost:5432/db)"},
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа: 'unrestricted' или 'restricted'"
-                }
+                    "description": "Режим доступа: 'unrestricted' или 'restricted'",
+                },
             },
-            "required": ["database_url"]
-        }
+            "required": ["database_url"],
+        },
     ),
     MCPTool(
         name="list_objects",
@@ -175,29 +176,23 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе"
-                },
-                "schema_name": {
-                    "type": "string",
-                    "description": "Имя схемы"
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе"},
+                "schema_name": {"type": "string", "description": "Имя схемы"},
                 "object_type": {
                     "type": "string",
                     "enum": ["table", "view", "sequence", "extension"],
                     "default": "table",
-                    "description": "Тип объекта: 'table', 'view', 'sequence' или 'extension'"
+                    "description": "Тип объекта: 'table', 'view', 'sequence' или 'extension'",
                 },
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа"
-                }
+                    "description": "Режим доступа",
+                },
             },
-            "required": ["database_url", "schema_name"]
-        }
+            "required": ["database_url", "schema_name"],
+        },
     ),
     MCPTool(
         name="get_object_details",
@@ -205,33 +200,24 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе"
-                },
-                "schema_name": {
-                    "type": "string",
-                    "description": "Имя схемы"
-                },
-                "object_name": {
-                    "type": "string",
-                    "description": "Имя объекта"
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе"},
+                "schema_name": {"type": "string", "description": "Имя схемы"},
+                "object_name": {"type": "string", "description": "Имя объекта"},
                 "object_type": {
                     "type": "string",
                     "enum": ["table", "view", "sequence", "extension"],
                     "default": "table",
-                    "description": "Тип объекта"
+                    "description": "Тип объекта",
                 },
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа"
-                }
+                    "description": "Режим доступа",
+                },
             },
-            "required": ["database_url", "schema_name", "object_name"]
-        }
+            "required": ["database_url", "schema_name", "object_name"],
+        },
     ),
     MCPTool(
         name="explain_query",
@@ -239,19 +225,9 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе"
-                },
-                "sql": {
-                    "type": "string",
-                    "description": "SQL запрос для анализа"
-                },
-                "analyze": {
-                    "type": "boolean",
-                    "description": "Выполнить запрос для реальной статистики",
-                    "default": False
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе"},
+                "sql": {"type": "string", "description": "SQL запрос для анализа"},
+                "analyze": {"type": "boolean", "description": "Выполнить запрос для реальной статистики", "default": False},
                 "hypothetical_indexes": {
                     "type": "array",
                     "items": {
@@ -259,22 +235,22 @@ AVAILABLE_TOOLS = [
                         "properties": {
                             "table": {"type": "string", "description": "Имя таблицы"},
                             "columns": {"type": "array", "items": {"type": "string"}, "description": "Список столбцов"},
-                            "using": {"type": "string", "description": "Метод индекса", "default": "btree"}
+                            "using": {"type": "string", "description": "Метод индекса", "default": "btree"},
                         },
-                        "required": ["table", "columns"]
+                        "required": ["table", "columns"],
                     },
                     "description": "Список гипотетических индексов",
-                    "default": []
+                    "default": [],
                 },
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа"
-                }
+                    "description": "Режим доступа",
+                },
             },
-            "required": ["database_url", "sql"]
-        }
+            "required": ["database_url", "sql"],
+        },
     ),
     MCPTool(
         name="execute_sql",
@@ -282,23 +258,17 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе"
-                },
-                "sql": {
-                    "type": "string",
-                    "description": "SQL запрос для выполнения"
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе"},
+                "sql": {"type": "string", "description": "SQL запрос для выполнения"},
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа"
-                }
+                    "description": "Режим доступа",
+                },
             },
-            "required": ["database_url", "sql"]
-        }
+            "required": ["database_url", "sql"],
+        },
     ),
     MCPTool(
         name="analyze_workload_indexes",
@@ -306,30 +276,18 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе"
-                },
-                "max_index_size_mb": {
-                    "type": "integer",
-                    "description": "Максимальный размер индекса в МБ",
-                    "default": 10000
-                },
-                "method": {
-                    "type": "string",
-                    "enum": ["dta", "llm"],
-                    "default": "dta",
-                    "description": "Метод анализа: 'dta' или 'llm'"
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе"},
+                "max_index_size_mb": {"type": "integer", "description": "Максимальный размер индекса в МБ", "default": 10000},
+                "method": {"type": "string", "enum": ["dta", "llm"], "default": "dta", "description": "Метод анализа: 'dta' или 'llm'"},
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа"
-                }
+                    "description": "Режим доступа",
+                },
             },
-            "required": ["database_url"]
-        }
+            "required": ["database_url"],
+        },
     ),
     MCPTool(
         name="analyze_query_indexes",
@@ -337,35 +295,19 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе"
-                },
-                "queries": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Список SQL запросов"
-                },
-                "max_index_size_mb": {
-                    "type": "integer",
-                    "description": "Максимальный размер индекса в МБ",
-                    "default": 10000
-                },
-                "method": {
-                    "type": "string",
-                    "enum": ["dta", "llm"],
-                    "default": "dta",
-                    "description": "Метод анализа"
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе"},
+                "queries": {"type": "array", "items": {"type": "string"}, "description": "Список SQL запросов"},
+                "max_index_size_mb": {"type": "integer", "description": "Максимальный размер индекса в МБ", "default": 10000},
+                "method": {"type": "string", "enum": ["dta", "llm"], "default": "dta", "description": "Метод анализа"},
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа"
-                }
+                    "description": "Режим доступа",
+                },
             },
-            "required": ["database_url", "queries"]
-        }
+            "required": ["database_url", "queries"],
+        },
     ),
     MCPTool(
         name="analyze_db_health",
@@ -373,24 +315,21 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе"
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе"},
                 "health_type": {
                     "type": "string",
                     "description": f"Типы проверок: {', '.join(sorted([t.value for t in HealthType]))}",
-                    "default": "all"
+                    "default": "all",
                 },
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа"
-                }
+                    "description": "Режим доступа",
+                },
             },
-            "required": ["database_url"]
-        }
+            "required": ["database_url"],
+        },
     ),
     MCPTool(
         name="get_top_queries",
@@ -398,32 +337,26 @@ AVAILABLE_TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {
-                "database_url": {
-                    "type": "string",
-                    "description": "URL для подключения к базе"
-                },
+                "database_url": {"type": "string", "description": "URL для подключения к базе"},
                 "sort_by": {
                     "type": "string",
                     "enum": ["total_time", "mean_time", "resources"],
                     "default": "resources",
-                    "description": "Критерий сортировки"
+                    "description": "Критерий сортировки",
                 },
-                "limit": {
-                    "type": "integer",
-                    "description": "Количество возвращаемых запросов",
-                    "default": 10
-                },
+                "limit": {"type": "integer", "description": "Количество возвращаемых запросов", "default": 10},
                 "access_mode": {
                     "type": "string",
                     "enum": [AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
                     "default": AccessMode.UNRESTRICTED.value,
-                    "description": "Режим доступа"
-                }
+                    "description": "Режим доступа",
+                },
             },
-            "required": ["database_url"]
-        }
-    )
+            "required": ["database_url"],
+        },
+    ),
 ]
+
 
 async def get_sql_driver(database_url: str, access_mode: str) -> Union[SqlDriver, SafeSqlDriver]:
     """Создает SQL драйвер для подключения."""
@@ -440,17 +373,20 @@ async def get_sql_driver(database_url: str, access_mode: str) -> Union[SqlDriver
         logger.error(f"Ошибка подключения к базе данных: {obfuscate_password(str(e))}")
         raise
 
+
 def format_text_response(text: Any) -> ResponseType:
     """Форматирует текстовый ответ."""
     return [{"type": "text", "text": str(text)}]
+
 
 def format_error_response(error: str) -> ResponseType:
     """Форматирует сообщение об ошибке."""
     return format_text_response(f"Ошибка: {obfuscate_password(error)}")
 
+
 async def list_schemas(
     database_url: str = Field(description="URL для подключения к базе"),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
     logger.info(f"Вызов list_schemas с database_url={obfuscate_password(database_url)}, access_mode={access_mode}")
     try:
@@ -476,13 +412,16 @@ async def list_schemas(
         logger.error(f"Ошибка при получении схем: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 async def list_objects(
     database_url: str = Field(description="URL для подключения к базе"),
     schema_name: str = Field(description="Имя схемы"),
     object_type: str = Field(description="Тип объекта", default="table"),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
-    logger.info(f"Вызов list_objects с database_url={obfuscate_password(database_url)}, schema_name={schema_name}, object_type={object_type}, access_mode={access_mode}")
+    logger.info(
+        f"Вызов list_objects с database_url={obfuscate_password(database_url)}, schema_name={schema_name}, object_type={object_type}, access_mode={access_mode}"
+    )
     try:
         sql_driver = await get_sql_driver(database_url, access_mode)
         if object_type in ("table", "view"):
@@ -495,9 +434,13 @@ async def list_objects(
                 WHERE table_schema = {} AND table_type = {}
                 ORDER BY table_name
                 """,
-                [schema_name, table_type]
+                [schema_name, table_type],
             )
-            objects = [{"schema": row.cells["table_schema"], "name": row.cells["table_name"], "type": row.cells["table_type"]} for row in rows] if rows else []
+            objects = (
+                [{"schema": row.cells["table_schema"], "name": row.cells["table_name"], "type": row.cells["table_type"]} for row in rows]
+                if rows
+                else []
+            )
         elif object_type == "sequence":
             rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
@@ -507,9 +450,13 @@ async def list_objects(
                 WHERE sequence_schema = {}
                 ORDER BY sequence_name
                 """,
-                [schema_name]
+                [schema_name],
             )
-            objects = [{"schema": row.cells["sequence_schema"], "name": row.cells["sequence_name"], "data_type": row.cells["data_type"]} for row in rows] if rows else []
+            objects = (
+                [{"schema": row.cells["sequence_schema"], "name": row.cells["sequence_name"], "data_type": row.cells["data_type"]} for row in rows]
+                if rows
+                else []
+            )
         elif object_type == "extension":
             rows = await sql_driver.execute_query(
                 """
@@ -518,7 +465,11 @@ async def list_objects(
                 ORDER BY extname
                 """
             )
-            objects = [{"name": row.cells["extname"], "version": row.cells["extversion"], "relocatable": row.cells["extrelocatable"]} for row in rows] if rows else []
+            objects = (
+                [{"name": row.cells["extname"], "version": row.cells["extversion"], "relocatable": row.cells["extrelocatable"]} for row in rows]
+                if rows
+                else []
+            )
         else:
             return format_error_response(f"Неподдерживаемый тип объекта: {object_type}")
         await sql_driver.close()
@@ -527,14 +478,17 @@ async def list_objects(
         logger.error(f"Ошибка при получении объектов: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 async def get_object_details(
     database_url: str = Field(description="URL для подключения к базе"),
     schema_name: str = Field(description="Имя схемы"),
     object_name: str = Field(description="Имя объекта"),
     object_type: str = Field(description="Тип объекта", default="table"),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
-    logger.info(f"Вызов get_object_details с database_url={obfuscate_password(database_url)}, schema_name={schema_name}, object_name={object_name}, object_type={object_type}, access_mode={access_mode}")
+    logger.info(
+        f"Вызов get_object_details с database_url={obfuscate_password(database_url)}, schema_name={schema_name}, object_name={object_name}, object_type={object_type}, access_mode={access_mode}"
+    )
     try:
         sql_driver = await get_sql_driver(database_url, access_mode)
         if object_type in ("table", "view"):
@@ -546,16 +500,21 @@ async def get_object_details(
                 WHERE table_schema = {} AND table_name = {}
                 ORDER BY ordinal_position
                 """,
-                [schema_name, object_name]
+                [schema_name, object_name],
             )
-            columns = [
-                {
-                    "column": r.cells["column_name"],
-                    "data_type": r.cells["data_type"],
-                    "is_nullable": r.cells["is_nullable"],
-                    "default": r.cells["column_default"]
-                } for r in col_rows
-            ] if col_rows else []
+            columns = (
+                [
+                    {
+                        "column": r.cells["column_name"],
+                        "data_type": r.cells["data_type"],
+                        "is_nullable": r.cells["is_nullable"],
+                        "default": r.cells["column_default"],
+                    }
+                    for r in col_rows
+                ]
+                if col_rows
+                else []
+            )
             con_rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
@@ -566,15 +525,20 @@ async def get_object_details(
                 AND tc.table_schema = kcu.table_schema
                 WHERE tc.table_schema = {} AND tc.table_name = {}
                 """,
-                [schema_name, object_name]
+                [schema_name, object_name],
             )
-            constraints = [
-                {
-                    "constraint_name": r.cells["constraint_name"],
-                    "constraint_type": r.cells["constraint_type"],
-                    "column_name": r.cells["column_name"]
-                } for r in con_rows
-            ] if con_rows else []
+            constraints = (
+                [
+                    {
+                        "constraint_name": r.cells["constraint_name"],
+                        "constraint_type": r.cells["constraint_type"],
+                        "column_name": r.cells["column_name"],
+                    }
+                    for r in con_rows
+                ]
+                if con_rows
+                else []
+            )
             details = {"columns": columns, "constraints": constraints}
             await sql_driver.close()
             return format_text_response(details)
@@ -584,14 +548,17 @@ async def get_object_details(
         logger.error(f"Ошибка при получении деталей объекта: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 async def explain_query(
     database_url: str = Field(description="URL для подключения к базе"),
     sql: str = Field(description="SQL запрос для анализа"),
     analyze: bool = Field(description="Выполнить запрос для реальной статистики", default=False),
     hypothetical_indexes: List[Dict[str, Any]] = Field(description="Список гипотетических индексов", default=[]),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
-    logger.info(f"Вызов explain_query с database_url={obfuscate_password(database_url)}, sql={sql[:50]}..., analyze={analyze}, access_mode={access_mode}")
+    logger.info(
+        f"Вызов explain_query с database_url={obfuscate_password(database_url)}, sql={sql[:50]}..., analyze={analyze}, access_mode={access_mode}"
+    )
     try:
         sql_driver = await get_sql_driver(database_url, access_mode)
         tool = ExplainPlanTool(sql_driver=sql_driver)
@@ -602,10 +569,11 @@ async def explain_query(
         logger.error(f"Ошибка при анализе запроса: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 async def execute_sql(
     database_url: str = Field(description="URL для подключения к базе"),
     sql: str = Field(description="SQL запрос для выполнения"),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
     logger.info(f"Вызов execute_sql с database_url={obfuscate_password(database_url)}, sql={sql[:50]}..., access_mode={access_mode}")
     try:
@@ -618,11 +586,12 @@ async def execute_sql(
         logger.error(f"Ошибка при выполнении SQL: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 async def analyze_workload_indexes(
     database_url: str = Field(description="URL для подключения к базе"),
     max_index_size_mb: int = Field(description="Максимальный размер индекса в МБ", default=10000),
     method: Literal["dta", "llm"] = Field(description="Метод анализа", default="dta"),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
     logger.info(f"Вызов analyze_workload_indexes с database_url={obfuscate_password(database_url)}, method={method}, access_mode={access_mode}")
     try:
@@ -639,14 +608,17 @@ async def analyze_workload_indexes(
         logger.error(f"Ошибка при анализе рабочей нагрузки: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 async def analyze_query_indexes(
     database_url: str = Field(description="URL для подключения к базе"),
     queries: List[str] = Field(description="Список SQL запросов"),
     max_index_size_mb: int = Field(description="Максимальный размер индекса в МБ", default=10000),
     method: Literal["dta", "llm"] = Field(description="Метод анализа", default="dta"),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
-    logger.info(f"Вызов analyze_query_indexes с database_url={obfuscate_password(database_url)}, queries_count={len(queries)}, method={method}, access_mode={access_mode}")
+    logger.info(
+        f"Вызов analyze_query_indexes с database_url={obfuscate_password(database_url)}, queries_count={len(queries)}, method={method}, access_mode={access_mode}"
+    )
     try:
         if len(queries) > MAX_NUM_INDEX_TUNING_QUERIES:
             return format_error_response(f"Слишком много запросов: {len(queries)}. Максимум: {MAX_NUM_INDEX_TUNING_QUERIES}")
@@ -663,10 +635,11 @@ async def analyze_query_indexes(
         logger.error(f"Ошибка при анализе запросов: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 async def analyze_db_health(
     database_url: str = Field(description="URL для подключения к базе"),
     health_type: str = Field(description=f"Типы проверок: {', '.join(sorted([t.value for t in HealthType]))}", default="all"),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
     logger.info(f"Вызов analyze_db_health с database_url={obfuscate_password(database_url)}, health_type={health_type}, access_mode={access_mode}")
     try:
@@ -679,13 +652,16 @@ async def analyze_db_health(
         logger.error(f"Ошибка при анализе здоровья базы: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 async def get_top_queries(
     database_url: str = Field(description="URL для подключения к базе"),
     sort_by: Literal["total_time", "mean_time", "resources"] = Field(description="Критерий сортировки", default="resources"),
     limit: int = Field(description="Количество возвращаемых запросов", default=10),
-    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value)
+    access_mode: str = Field(description="Режим доступа", default=AccessMode.UNRESTRICTED.value),
 ) -> ResponseType:
-    logger.info(f"Вызов get_top_queries с database_url={obfuscate_password(database_url)}, sort_by={sort_by}, limit={limit}, access_mode={access_mode}")
+    logger.info(
+        f"Вызов get_top_queries с database_url={obfuscate_password(database_url)}, sort_by={sort_by}, limit={limit}, access_mode={access_mode}"
+    )
     try:
         sql_driver = await get_sql_driver(database_url, access_mode)
         tool = TopQueriesCalc(sql_driver=sql_driver)
@@ -696,41 +672,34 @@ async def get_top_queries(
         logger.error(f"Ошибка при получении топ-запросов: {obfuscate_password(str(e))}")
         return format_error_response(str(e))
 
+
 @app.post("/")
 async def handle_jsonrpc_request(request: Request):
     """Обработка JSON-RPC запросов"""
     try:
         json_data = await request.json()
         mcp_request = MCPRequest(**json_data)
-        
+
         if mcp_request.method == "initialize":
             configure_logging(mcp_request.params.get("capabilities", {}).get("loggingConfig", {}))
             logger.info("Инициализация сервера")
             return MCPResponse(
                 id=mcp_request.id,
                 result={
-                    "serverInfo": {
-                        "name": "Postgres MCP Tools Server",
-                        "version": "1.0.0"
-                    },
-                    "capabilities": {
-                        "tools": {tool.name: asdict(tool) for tool in AVAILABLE_TOOLS}
-                    }
-                }
+                    "serverInfo": {"name": "Postgres MCP Tools Server", "version": "1.0.0"},
+                    "capabilities": {"tools": {tool.name: asdict(tool) for tool in AVAILABLE_TOOLS}},
+                },
             ).to_dict()
-        
+
         elif mcp_request.method == "tools/list":
             logger.info("Запрос списка инструментов")
-            return MCPResponse(
-                id=mcp_request.id,
-                result={"tools": [asdict(tool) for tool in AVAILABLE_TOOLS]}
-            ).to_dict()
-        
+            return MCPResponse(id=mcp_request.id, result={"tools": [asdict(tool) for tool in AVAILABLE_TOOLS]}).to_dict()
+
         elif mcp_request.method == "tools/call":
             tool_name = mcp_request.params.get("name")
             arguments = mcp_request.params.get("arguments", {})
             logger.info(f"Вызов инструмента: {tool_name} с аргументами: {obfuscate_password(str(arguments))}")
-            
+
             tool_functions = {
                 "list_schemas": list_schemas,
                 "list_objects": list_objects,
@@ -740,46 +709,40 @@ async def handle_jsonrpc_request(request: Request):
                 "analyze_workload_indexes": analyze_workload_indexes,
                 "analyze_query_indexes": analyze_query_indexes,
                 "analyze_db_health": analyze_db_health,
-                "get_top_queries": get_top_queries
+                "get_top_queries": get_top_queries,
             }
-            
+
             if tool_name not in tool_functions:
-                return MCPResponse(
-                    id=mcp_request.id,
-                    error={"code": -32601, "message": f"Инструмент {tool_name} не найден"}
-                ).to_dict()
-            
+                return MCPResponse(id=mcp_request.id, error={"code": -32601, "message": f"Инструмент {tool_name} не найден"}).to_dict()
+
             try:
                 result = await tool_functions[tool_name](**arguments)
                 return MCPResponse(id=mcp_request.id, result={"content": result}).to_dict()
             except Exception as e:
                 logger.error(f"Ошибка выполнения инструмента {tool_name}: {obfuscate_password(str(e))}")
-                return MCPResponse(
-                    id=mcp_request.id,
-                    error={"code": -32000, "message": obfuscate_password(str(e))}
-                ).to_dict()
-        
+                return MCPResponse(id=mcp_request.id, error={"code": -32000, "message": obfuscate_password(str(e))}).to_dict()
+
         else:
-            return MCPResponse(
-                id=mcp_request.id,
-                error={"code": -32601, "message": f"Метод {mcp_request.method} не найден"}
-            ).to_dict()
-    
+            return MCPResponse(id=mcp_request.id, error={"code": -32601, "message": f"Метод {mcp_request.method} не найден"}).to_dict()
+
     except Exception as e:
         logger.error(f"Ошибка обработки JSON-RPC запроса: {obfuscate_password(str(e))}")
-        return MCPResponse(
-            id=None,
-            error={"code": -32700, "message": obfuscate_password(str(e))}
-        ).to_dict()
+        return MCPResponse(id=None, error={"code": -32700, "message": obfuscate_password(str(e))}).to_dict()
+
 
 def parse_args():
     """Разбор аргументов командной строки"""
     parser = argparse.ArgumentParser(description="Postgres MCP Tools Server")
     parser.add_argument("--sse-host", default="localhost", help="SSE host (default: localhost)")
     parser.add_argument("--sse-port", type=int, default=5001, help="SSE port (default: 5001)")
-    parser.add_argument("--access-mode", choices=[AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value], 
-                       default=AccessMode.UNRESTRICTED.value, help="Default access mode")
+    parser.add_argument(
+        "--access-mode",
+        choices=[AccessMode.UNRESTRICTED.value, AccessMode.RESTRICTED.value],
+        default=AccessMode.UNRESTRICTED.value,
+        help="Default access mode",
+    )
     return parser.parse_args()
+
 
 async def shutdown():
     """Корректное завершение работы сервера"""
@@ -795,6 +758,7 @@ async def shutdown():
         logger.removeHandler(file_handler)
     logger.info("Сервер завершил работу")
 
+
 def handle_shutdown(loop):
     """Обработка сигналов завершения"""
     tasks = [task for task in asyncio.all_tasks(loop) if task is not asyncio.current_task()]
@@ -803,6 +767,7 @@ def handle_shutdown(loop):
     loop.run_until_complete(loop.shutdown_asyncgens())
     loop.run_until_complete(shutdown())
     loop.close()
+
 
 if __name__ == "__main__":
     args = parse_args()

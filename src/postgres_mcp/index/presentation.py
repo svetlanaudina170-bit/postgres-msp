@@ -40,6 +40,7 @@ from .index_opt_base import IndexDefinition, IndexTuningResult
 # Инициализация логгера
 logger = logging.getLogger(__name__)
 
+
 # Описание класса TextPresentation
 #
 # Класс TextPresentation предоставляет текстовое представление рекомендаций по индексам,
@@ -224,9 +225,7 @@ class TextPresentation:
                     "(т.е. более 8191 байт)."
                 )
             elif rec.potential_problematic_reason:
-                rec_dict["warning"] = (
-                    f"Этот индекс потенциально проблемный, так как включает столбец типа {rec.potential_problematic_reason}."
-                )
+                rec_dict["warning"] = f"Этот индекс потенциально проблемный, так как включает столбец типа {rec.potential_problematic_reason}."
             recommendations.append(rec_dict)
         return recommendations
 

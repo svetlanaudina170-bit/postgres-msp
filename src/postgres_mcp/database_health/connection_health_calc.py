@@ -30,6 +30,7 @@ from typing import List, Dict, Any
 
 from ..sql import SqlDriver
 
+
 # Описание класса ConnectionHealthMetrics
 #
 # Класс ConnectionHealthMetrics — это класс данных, который хранит метрики состояния подключений,
@@ -56,6 +57,7 @@ class ConnectionHealthMetrics:
             bool: True, если общее количество и простаивающие подключения в пределах нормы
         """
         return self.is_total_connections_healthy and self.is_idle_connections_healthy
+
 
 # Описание класса ConnectionHealthCalc
 #

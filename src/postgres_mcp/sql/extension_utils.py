@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 # TODO: В будущем, при поддержке множественных подключений, кэш должен быть специфичным для каждого подключения
 _POSTGRES_VERSION: Optional[int] = None
 
+
 # Описание класса ExtensionStatus
 #
 # Класс ExtensionStatus представляет статус расширения PostgreSQL, включая информацию
@@ -55,6 +56,7 @@ class ExtensionStatus:
     message: str  # Сообщение о статусе
     default_version: Optional[str]  # Версия по умолчанию, если доступна
 
+
 def reset_postgres_version_cache() -> None:
     """
     Описание функции reset_postgres_version_cache:
@@ -65,6 +67,7 @@ def reset_postgres_version_cache() -> None:
     """
     global _POSTGRES_VERSION
     _POSTGRES_VERSION = None
+
 
 async def get_postgres_version(sql_driver: SqlDriver) -> int:
     """
@@ -107,11 +110,8 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
         logger.error(f"Ошибка при определении версии PostgreSQL: {e}", exc_info=True)
         raise ValueError("Ошибка при определении версии PostgreSQL") from e
 
-async def check_postgres_version_requirement(
-    sql_driver: SqlDriver,
-    min_version: int,
-    feature_name: str
-) -> Tuple[bool, str]:
+
+async def check_postgres_version_requirement(sql_driver: SqlDriver, min_version: int, feature_name: str) -> Tuple[bool, str]:
     """
     Описание функции check_postgres_version_requirement:
     Проверяет, соответствует ли версия PostgreSQL минимальным требованиям для указанной функции.
@@ -130,17 +130,14 @@ async def check_postgres_version_requirement(
     # Проверка соответствия версии
     if pg_version >= min_version:
         return True, f"Версия PostgreSQL {pg_version} соответствует требованиям для {feature_name}"
-    
+
     return False, (
-        f"Для функции {feature_name} требуется PostgreSQL {min_version} или новее. "
-        f"Текущая версия: PostgreSQL {pg_version or 'неизвестна'}."
+        f"Для функции {feature_name} требуется PostgreSQL {min_version} или новее. Текущая версия: PostgreSQL {pg_version or 'неизвестна'}."
     )
 
+
 async def check_extension(
-    sql_driver: SqlDriver,
-    extension_name: str,
-    include_messages: bool = True,
-    message_type: Literal["plain", "markdown"] = "plain"
+    sql_driver: SqlDriver, extension_name: str, include_messages: bool = True, message_type: Literal["plain", "markdown"] = "plain"
 ) -> ExtensionStatus:
     """
     Описание функции check_extension:
@@ -229,10 +226,8 @@ async def check_extension(
 
     return result
 
-async def check_hypopg_installation_status(
-    sql_driver: SqlDriver,
-    message_type: Literal["plain", "markdown"] = "markdown"
-) -> Tuple[bool, str]:
+
+async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: Literal["plain", "markdown"] = "markdown") -> Tuple[bool, str]:
     """
     Описание функции check_hypopg_installation_status:
     Проверяет статус установки расширения HypoPG и возвращает подробное сообщение.

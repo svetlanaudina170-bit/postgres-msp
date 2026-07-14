@@ -33,6 +33,7 @@ from attrs import define, field
 # Если стоимость рекомендации равна 0.0, возвращается это значение
 INFINITE_IMPROVEMENT_MULTIPLIER: float = 1000000.0
 
+
 # Описание класса ErrorResult
 #
 # Класс ErrorResult представляет простую ошибку с текстовым сообщением.
@@ -67,6 +68,7 @@ class ErrorResult:
         # Возврат сохраненного сообщения
         return self.value
 
+
 def calculate_improvement_multiple(base_cost: float, rec_cost: float) -> float:
     """
     Описание функции calculate_improvement_multiple:
@@ -89,6 +91,7 @@ def calculate_improvement_multiple(base_cost: float, rec_cost: float) -> float:
         return INFINITE_IMPROVEMENT_MULTIPLIER
     # Вычисление множителя улучшения
     return base_cost / rec_cost
+
 
 # Описание класса PlanNode
 #
@@ -166,6 +169,7 @@ class PlanNode:
 
         # Возврат созданного узла
         return node
+
 
 # Описание класса ExplainPlanArtifact
 #
@@ -257,9 +261,7 @@ class ExplainPlanArtifact:
 
         # Добавление фактических метрик
         if node.actual_total_time is not None:
-            output += (
-                f" [Фактически: {node.actual_startup_time:.2f}..{node.actual_total_time:.2f} мс, Строк: {node.actual_rows}, Циклов: {node.actual_loops}]"
-            )
+            output += f" [Фактически: {node.actual_startup_time:.2f}..{node.actual_total_time:.2f} мс, Строк: {node.actual_rows}, Циклов: {node.actual_loops}]"
 
         # Добавление фильтра
         if node.filter:
@@ -271,7 +273,9 @@ class ExplainPlanArtifact:
 
         # Добавление информации о буферах
         if node.shared_hit_blocks is not None:
-            output += f"\n{indent}  Буферы - попаданий: {node.shared_hit_blocks}, чтений: {node.shared_read_blocks}, записей: {node.shared_written_blocks}"
+            output += (
+                f"\n{indent}  Буферы - попаданий: {node.shared_hit_blocks}, чтений: {node.shared_read_blocks}, записей: {node.shared_written_blocks}"
+            )
 
         # Рекурсивное форматирование дочерних узлов
         if node.children:

@@ -116,12 +116,9 @@ def decrypt_value(value: str) -> str:
         return value
     f = _get_fernet()
     if f is None:
-        logger.warning(
-            "Зашифрованное значение найдено, но ключ CONNECTIONS_ENCRYPTION_KEY "
-            "не задан/недоступен — значение не может быть прочитано."
-        )
+        logger.warning("Зашифрованное значение найдено, но ключ CONNECTIONS_ENCRYPTION_KEY не задан/недоступен — значение не может быть прочитано.")
         return ""
-    token = value[len(_ENCRYPTION_PREFIX):]
+    token = value[len(_ENCRYPTION_PREFIX) :]
     try:
         return f.decrypt(token.encode("ascii")).decode("utf-8")
     except Exception as e:

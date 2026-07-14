@@ -27,23 +27,23 @@ def extract_imports(project_path):
     # Регулярное выражение для поиска импортов
     # Соответствует 'import module' или 'from module import ...'
     import_pattern = re.compile(
-        r'^\s*(?:import|from)\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)',
+        r"^\s*(?:import|from)\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)",
         re.MULTILINE,
     )
 
     # Обход всех файлов в директории
     for root, _, files in os.walk(project_path):
         for file in files:
-            if file.endswith('.py'):
+            if file.endswith(".py"):
                 file_path = Path(root) / file
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
+                    with open(file_path, "r", encoding="utf-8") as f:
                         content = f.read()
                         # Поиск всех импортов в файле
                         matches = import_pattern.findall(content)
                         for match in matches:
                             # Разделяем по точкам и берём первый элемент (название пакета/модуля)
-                            module_name = match.split('.')[0]
+                            module_name = match.split(".")[0]
                             unique_imports.add(module_name)
                 except Exception as e:
                     print(f"Ошибка при чтении файла {file_path}: {e}")
@@ -53,7 +53,7 @@ def extract_imports(project_path):
 
 
 # Пример использования
-project_path = r'C:\Projects\MCP\postgres-mcp\postgres-mcp\src\postgres_mcp'  # Укажите путь к корневой папке проекта
+project_path = r"C:\Projects\MCP\postgres-mcp\postgres-mcp\src\postgres_mcp"  # Укажите путь к корневой папке проекта
 imports = extract_imports(project_path)
 print("Уникальные импорты:")
 for imp in imports:

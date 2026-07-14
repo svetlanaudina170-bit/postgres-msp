@@ -52,6 +52,7 @@ ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResou
 # Инициализация логгера
 logger = logging.getLogger(__name__)
 
+
 # Описание перечисления HealthType
 #
 # Перечисление HealthType определяет поддерживаемые типы проверок состояния базы данных.
@@ -67,6 +68,7 @@ class HealthType(str, Enum):
     BUFFER = "buffer"
     CONSTRAINT = "constraint"
     ALL = "all"
+
 
 # Описание класса DatabaseHealthTool
 #

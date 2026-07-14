@@ -40,6 +40,7 @@ from typing_extensions import LiteralString
 # Инициализация логгера
 logger = logging.getLogger(__name__)
 
+
 def obfuscate_password(text: Optional[str]) -> Optional[str]:
     """
     Описание функции obfuscate_password:
@@ -84,6 +85,7 @@ def obfuscate_password(text: Optional[str]) -> Optional[str]:
     text = re.sub(dsn_double_quote, r"\1****\3", text)
 
     return text
+
 
 # Описание класса DbConnPool
 #
@@ -195,6 +197,7 @@ class DbConnPool:
         """
         return self._last_error
 
+
 # Описание класса SqlDriver
 #
 # Класс SqlDriver предоставляет интерфейс для выполнения SQL-запросов к PostgreSQL.
@@ -298,11 +301,7 @@ class SqlDriver:
             raise
 
     async def _execute_with_connection(
-        self,
-        connection: Any,
-        query: LiteralString,
-        params: Optional[List[Any]],
-        force_readonly: bool
+        self, connection: Any, query: LiteralString, params: Optional[List[Any]], force_readonly: bool
     ) -> Optional[List[RowResult]]:
         """
         Описание метода _execute_with_connection:
@@ -360,7 +359,7 @@ class SqlDriver:
                     logger.error(f"Ошибка при откате транзакции: {rollback_error}")
             logger.error(f"Ошибка при выполнении запроса ({query}): {e}")
             raise
-            
+
     async def close(self) -> None:
         """
         Описание метода close:

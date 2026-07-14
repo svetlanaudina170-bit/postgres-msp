@@ -51,6 +51,7 @@ from .index_opt_base import IndexRecommendation, IndexTuningBase
 # Инициализация логгера
 logger = logging.getLogger(__name__)
 
+
 # Описание класса Index
 #
 # Класс Index — это Pydantic-модель, используемая для взаимодействия с LLM через библиотеку instructor.
@@ -104,12 +105,14 @@ class Index(BaseModel):
         """
         return IndexDefinition(table=self.table_name, columns=self.columns)
 
+
 # Описание класса IndexingAlternative
 #
 # Класс IndexingAlternative — это Pydantic-модель, представляющая список альтернативных
 # наборов индексов, предложенных LLM.
 class IndexingAlternative(BaseModel):
     alternatives: List[Set[Index]]
+
 
 # Описание класса ScoredIndexes
 #
@@ -121,6 +124,7 @@ class ScoredIndexes:
     execution_cost: float
     index_size: float
     objective_score: float
+
 
 # Описание класса LLMOptimizerTool
 #
@@ -167,9 +171,7 @@ class LLMOptimizerTool(IndexTuningBase):
         return math.log(execution_cost) + self.pareto_alpha * math.log(index_size)
 
     @override
-    async def _generate_recommendations(
-        self, query_weights: List[Tuple[str, SelectStmt, float]]
-    ) -> Tuple[Set[IndexRecommendation], float]:
+    async def _generate_recommendations(self, query_weights: List[Tuple[str, SelectStmt, float]]) -> Tuple[Set[IndexRecommendation], float]:
         """
         Описание метода _generate_recommendations:
         Генерирует рекомендации по индексам, используя LLM.
@@ -383,6 +385,7 @@ class LLMOptimizerTool(IndexTuningBase):
         if isinstance(explain_plan_json, dict):
             plan_data = explain_plan_json.get("Plan")
             if plan_data is not None:
+
                 def extract_indexes_from_node(node: Dict[str, Any]) -> None:
                     if node.get("Node Type") in ["Index Scan", "Index Only Scan", "Bitmap Index Scan"]:
                         if "Index Name" in node and "Relation Name" in node:

@@ -86,11 +86,15 @@ class PostgresClient:
             pool_timeout = int(os.getenv("DB_POOL_TIMEOUT", "10"))
             pool_cmd_timeout = int(os.getenv("DB_POOL_COMMAND_TIMEOUT", "30"))
             self._pool = await asyncpg.create_pool(
-                host=cfg["host"], port=cfg["port"],
-                user=cfg["user"], password=cfg["password"],
+                host=cfg["host"],
+                port=cfg["port"],
+                user=cfg["user"],
+                password=cfg["password"],
                 database=cfg["database"],
-                min_size=pool_min, max_size=pool_max,
-                timeout=pool_timeout, command_timeout=pool_cmd_timeout,
+                min_size=pool_min,
+                max_size=pool_max,
+                timeout=pool_timeout,
+                command_timeout=pool_cmd_timeout,
             )
             self._current_url = url
             return None
@@ -112,13 +116,18 @@ class PostgresClient:
         if not self.is_connected:
             return SqlResult(error="Not connected")
         import time
+
         start = time.monotonic()
         try:
             async with self._pool.acquire() as conn:
                 stripped = sql.strip().upper()
-                if stripped.startswith("SELECT") or stripped.startswith("WITH") or \
-                   stripped.startswith("EXPLAIN") or stripped.startswith("SHOW") or \
-                   stripped.startswith("DESCRIBE"):
+                if (
+                    stripped.startswith("SELECT")
+                    or stripped.startswith("WITH")
+                    or stripped.startswith("EXPLAIN")
+                    or stripped.startswith("SHOW")
+                    or stripped.startswith("DESCRIBE")
+                ):
                     rows = await conn.fetch(sql)
                     duration = (time.monotonic() - start) * 1000
                     if not rows:
@@ -172,11 +181,16 @@ class PostgresClient:
                     )
                     if not cr.error:
                         for crow in cr.rows:
-                            info.columns.append({
-                                "schema": schema["name"], "table": tname,
-                                "name": crow[0], "type": crow[1],
-                                "nullable": crow[2] == "YES", "default": crow[3],
-                            })
+                            info.columns.append(
+                                {
+                                    "schema": schema["name"],
+                                    "table": tname,
+                                    "name": crow[0],
+                                    "type": crow[1],
+                                    "nullable": crow[2] == "YES",
+                                    "default": crow[3],
+                                }
+                            )
         return info
 
     async def get_schema_text(self) -> str:
@@ -184,20 +198,19 @@ class PostgresClient:
         lines = []
         for t in info.tables:
             cols = [c for c in info.columns if c["schema"] == t["schema"] and c["table"] == t["name"]]
-            lines.append(f'TABLE {t["schema"]}.{t["name"]}:')
+            lines.append(f"TABLE {t['schema']}.{t['name']}:")
             for c in cols:
-                lines.append(f'  {c["name"]} {c["type"]}' + (" NULL" if c["nullable"] else " NOT NULL"))
+                lines.append(f"  {c['name']} {c['type']}" + (" NULL" if c["nullable"] else " NOT NULL"))
         return "\n".join(lines)
 
     async def explain_query(self, sql: str) -> str:
         explain_format = os.getenv("EXPLAIN_FORMAT", "JSON")
         explain_analyze = os.getenv("EXPLAIN_ANALYZE", "false").lower() == "true"
-        r = await self.execute_sql(
-            f"EXPLAIN (FORMAT {explain_format}, ANALYZE {str(explain_analyze).lower()}) {sql}"
-        )
+        r = await self.execute_sql(f"EXPLAIN (FORMAT {explain_format}, ANALYZE {str(explain_analyze).lower()}) {sql}")
         if r.error:
             return f"Error: {r.error}"
         import json
+
         try:
             return json.dumps(r.rows[0][0] if r.rows else r.rows, indent=2, default=str)
         except Exception:
@@ -206,13 +219,17 @@ class PostgresClient:
     async def get_health_report(self) -> str:
         checks = []
         r = await self.execute_sql("SELECT count(*)::int FROM pg_stat_activity WHERE state IS NOT NULL")
-        if not r.error and r.rows: checks.append(f"Active connections: {r.rows[0][0]}")
+        if not r.error and r.rows:
+            checks.append(f"Active connections: {r.rows[0][0]}")
         r = await self.execute_sql("SELECT count(*)::int FROM pg_stat_user_tables")
-        if not r.error and r.rows: checks.append(f"User tables: {r.rows[0][0]}")
+        if not r.error and r.rows:
+            checks.append(f"User tables: {r.rows[0][0]}")
         r = await self.execute_sql("SELECT round(sum(pg_table_size(relid))::numeric/1024/1024,1)::text FROM pg_stat_user_tables")
-        if not r.error and r.rows: checks.append(f"Total table size: {r.rows[0][0]} MB")
+        if not r.error and r.rows:
+            checks.append(f"Total table size: {r.rows[0][0]} MB")
         r = await self.execute_sql("SELECT count(*)::int FROM pg_stat_user_indexes")
-        if not r.error and r.rows: checks.append(f"Indexes: {r.rows[0][0]}")
+        if not r.error and r.rows:
+            checks.append(f"Indexes: {r.rows[0][0]}")
         return "\n".join(checks) if checks else "No health data available"
 
     async def get_top_queries(self, limit: int = None) -> str:
