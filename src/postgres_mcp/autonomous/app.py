@@ -748,6 +748,40 @@ async def handle_test_connection(url: str) -> str:
     return f"\u2705 Connection successful!\n{version}"
 
 
+def handle_export_connections() -> tuple:
+    """Export connections to a JSON file for download."""
+    import tempfile
+    import json
+    from datetime import datetime
+
+    conns = load_connections()
+    if not conns:
+        return None, "\u26a0\ufe0f No connections to export"
+
+    # Prepare export data (mask passwords in URLs)
+    export_data = []
+    for c in conns:
+        url = c.get("value", "")
+        # Mask password in URL for security
+        masked_url = _mask_password(url) if url else ""
+        export_data.append({
+            "name": c.get("key", ""),
+            "url": masked_url,
+            "pinned": c.get("pinned", False),
+            "default": c.get("default", False),
+        })
+
+    # Create temp file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"pg_connections_{timestamp}.json"
+    tmp_path = os.path.join(tempfile.gettempdir(), filename)
+
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+    return tmp_path, f"\u2705 Exported {len(export_data)} connections"
+
+
 def handle_delete(display: str, show_val: bool) -> tuple[dict, str, str, str]:
     conn = _find_from_dd(display, show_val)
     if not conn:
@@ -1216,6 +1250,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 default_btn = gr.Button("\u2b50 Default", scale=1)
                 rename_btn = gr.Button("\u270f Rename", scale=1)
                 edit_btn = gr.Button("\u270f Edit", scale=1)
+                export_btn = gr.Button("\U0001f4e4 Export", scale=1)
                 delete_btn = gr.Button("\U0001f5d1 Delete", scale=1)
             with gr.Row():
                 label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
@@ -1257,6 +1292,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             default_btn.click(fn=handle_set_default, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, status_display], queue=False)
             rename_btn.click(fn=handle_rename, inputs=[saved_dd, label_input, show_value_cb], outputs=[saved_dd, status_display], queue=False)
             edit_btn.click(fn=handle_edit, inputs=[saved_dd, show_value_cb], outputs=[url_input, label_input, _editing_conn_id], queue=False)
+            export_btn.click(fn=handle_export_connections, outputs=[gr.File(label="Download"), status_display], queue=False)
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
             test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display, queue=False)
             connect_btn.click(
