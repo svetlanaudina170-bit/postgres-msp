@@ -1276,71 +1276,148 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
     gr.Markdown(f"# {APP_TITLE}")
     gr.Markdown("Standalone PostgreSQL client with AI chat, SQL editor, schema browser, and MCP server.")
 
+    # --- Delete confirmation modal (defined early for reference) ---
+    with gr.Column(visible=False, elem_id="llm-modal") as delete_confirm_modal:
+        gr.Markdown("### ⚠️ Delete Connection")
+        delete_confirm_name = gr.Textbox(label="Connection", interactive=False)
+        delete_confirm_info = gr.Textbox(label="", interactive=False, lines=3)
+        with gr.Row():
+            delete_confirm_yes = gr.Button("\U0001f5d1 Delete", variant="stop", scale=1)
+            delete_confirm_no = gr.Button("Cancel", scale=1)
+        _delete_dd_ref = gr.Textbox(visible=False)
+        _delete_showval_ref = gr.Checkbox(visible=False)
+
+    def open_delete_confirm(display: str, show_val: bool) -> tuple:
+        conn = _find_from_dd(display, show_val)
+        if not conn:
+            return gr.update(visible=False), "", "", display, show_val
+        info_lines = []
+        if conn.get("key"):
+            info_lines.append(f"Name: {conn['key']}")
+        if conn.get("value"):
+            info_lines.append(f"URL: {conn['value']}")
+        return (
+            gr.update(visible=True),
+            conn.get("key", ""),
+            "\n".join(info_lines),
+            display,
+            show_val,
+        )
+
+    def confirm_delete_yes(dd_val: str, show_val: bool) -> tuple:
+        return handle_delete(dd_val, show_val) + (gr.update(visible=False),)
+
+    def confirm_delete_no() -> dict:
+        return gr.update(visible=False)
+
     with gr.Tabs():
         with gr.TabItem("\U0001f50c Connection"):
             conns = load_connections()
             _saved_cfg = _dd_cfg("connection_tab", "saved_connections")
             _db_cfg = _dd_cfg("connection_tab", "database")
+
+            # === Group 1: Saved Connections + Actions dropdown ===
             with gr.Row():
                 saved_dd = gr.Dropdown(
                     label=_saved_cfg.get("label", "Saved Connections"),
                     choices=build_choices(conns, show_value=SHOW_VAL),
                     value=initial_dd,
                     allow_custom_value=not _saved_cfg.get("readonly", False),
-                    scale=3,
+                    scale=4,
                     elem_classes="saved-dd",
                 )
-                pin_btn = gr.Button("\U0001f4cc Pin", scale=1)
-                default_btn = gr.Button("\u2b50 Default", scale=1)
-                rename_btn = gr.Button("\u270f Rename", scale=1)
-                edit_btn = gr.Button("\u270f Edit", scale=1)
-                export_btn = gr.Button("\U0001f4e4 Export", scale=1)
-                import_btn = gr.Button("\U0001f4e5 Import", scale=1)
-                delete_btn = gr.Button("\U0001f5d1 Delete", scale=1)
-            with gr.Row():
-                label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
-                track_cb = gr.Checkbox(
-                    label="\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435",
-                    value=os.getenv("TRACK_CHANGES", "false").lower() == "true",
-                    scale=1,
-                )
-                show_value_cb = gr.Checkbox(
-                    label="\u041f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0442\u044c URL",
-                    value=os.getenv("SHOW_VALUE", "false").lower() == "true",
-                    scale=1,
-                )
-                import_file = gr.File(label="Import JSON", visible=False, file_types=[".json"])
-            save_btn = gr.Button("\U0001f4be Save This URL")
-            _editing_conn_id = gr.Textbox(visible=False)  # tracks connection being edited
-            with gr.Row():
-                url_input = gr.Textbox(label="URL", placeholder="postgresql://user:pass@host:5432/db", scale=3, value=db_url)
-                db_selector = gr.Dropdown(
-                    label=_db_cfg.get("label", "Database"),
-                    choices=[],
+                # Compact actions as dropdown
+                conn_action_dd = gr.Dropdown(
+                    label="Actions",
+                    choices=["—", "Pin", "Default", "Rename", "Edit", "Export", "Import", "Delete"],
+                    value="—",
                     interactive=True,
                     scale=1,
-                    value=None,
-                    allow_custom_value=not _db_cfg.get("readonly", True),
-                    elem_classes="saved-dd",
                 )
-            with gr.Row():
-                discover_btn = gr.Button("\U0001f50d Discover Databases", scale=1)
-                test_btn = gr.Button("\u2699\ufe0f Test Connection", scale=1)
-                connect_btn = gr.Button("Connect", variant="primary", scale=1)
-            with gr.Row():
-                disconnect_btn = gr.Button("\u2716 Disconnect", variant="stop", scale=1, visible=False)
-            with gr.Row():
-                status_display = gr.Textbox(label="Status / Databases", interactive=False, scale=3, value=_initial_status, elem_id="status_display")
 
+            # === Group 2: Connection Settings ===
+            with gr.Accordion("Connection Settings", open=True):
+                with gr.Row():
+                    url_input = gr.Textbox(label="URL", placeholder="postgresql://user:pass@host:5432/db", scale=3, value=db_url)
+                    db_selector = gr.Dropdown(
+                        label=_db_cfg.get("label", "Database"),
+                        choices=[],
+                        interactive=True,
+                        scale=1,
+                        value=None,
+                        allow_custom_value=not _db_cfg.get("readonly", True),
+                        elem_classes="saved-dd",
+                    )
+                with gr.Row():
+                    label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
+                    track_cb = gr.Checkbox(
+                        label="Track changes",
+                        value=os.getenv("TRACK_CHANGES", "false").lower() == "true",
+                        scale=1,
+                    )
+                    show_value_cb = gr.Checkbox(
+                        label="Show URL",
+                        value=os.getenv("SHOW_VALUE", "false").lower() == "true",
+                        scale=1,
+                    )
+                save_btn = gr.Button("\U0001f4be Save This URL", variant="primary")
+                _editing_conn_id = gr.Textbox(visible=False)  # tracks connection being edited
+                import_file = gr.File(label="Import JSON", visible=False, file_types=[".json"])
+
+            # === Group 3: Connection Actions ===
+            with gr.Accordion("Connection Actions", open=True):
+                with gr.Row():
+                    discover_btn = gr.Button("\U0001f50d Discover Databases", scale=1)
+                    test_btn = gr.Button("\u2699\ufe0f Test Connection", scale=1)
+                    connect_btn = gr.Button("Connect", variant="primary", scale=1)
+                    disconnect_btn = gr.Button("\u2716 Disconnect", variant="stop", scale=1, visible=False)
+
+            # === Group 4: Status ===
+            with gr.Accordion("Status / Databases", open=True):
+                status_display = gr.Textbox(label="", interactive=False, value=_initial_status, elem_id="status_display")
+
+            # --- Action dispatcher ---
+            def _dispatch_conn_action(action: str, display: str, show_val: bool, url: str, label: str, editing_id: str):
+                """Route dropdown action to the appropriate handler."""
+                if action in (None, "—"):
+                    return [gr.update()] * 10
+                if action == "Pin":
+                    r = handle_pin_toggle(display, show_val)
+                    return r, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                if action == "Default":
+                    r1, r2 = handle_set_default(display, show_val)
+                    return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                if action == "Rename":
+                    r1, r2 = handle_rename(display, label, show_val)
+                    return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                if action == "Edit":
+                    u, n, eid = handle_edit(display, show_val)
+                    return gr.update(), gr.update(), gr.update(), u, n, eid, gr.update(), gr.update(), gr.update(), gr.update()
+                if action == "Export":
+                    fp, msg = handle_export_connections()
+                    return gr.update(), gr.update(), msg, gr.update(), gr.update(), gr.update(), fp, gr.update(), gr.update(), gr.update()
+                if action == "Import":
+                    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(True)
+                if action == "Delete":
+                    # Open delete confirmation modal
+                    r = open_delete_confirm(display, show_val)
+                    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), r[0], gr.update()
+                return [gr.update()] * 10
+
+            # Outputs: saved_dd, status_display, (unused), url_input, label_input, _editing_conn_id, export_file, import_file, delete_confirm_modal, (unused)
+            conn_action_dd.change(
+                fn=_dispatch_conn_action,
+                inputs=[conn_action_dd, saved_dd, show_value_cb, url_input, label_input, _editing_conn_id],
+                outputs=[saved_dd, status_display, status_display, url_input, label_input, _editing_conn_id, gr.File(visible=False), import_file, delete_confirm_modal, _delete_dd_ref],
+                queue=False,
+            )
+
+            # Reset action dropdown after selection
+            conn_action_dd.change(fn=lambda: "—", inputs=[], outputs=[conn_action_dd], queue=False)
+
+            # --- Direct bindings ---
             saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input], queue=False)
             save_btn.click(fn=handle_save_url_edit, inputs=[url_input, label_input, _editing_conn_id], outputs=[saved_dd, status_display, _editing_conn_id], queue=False)
-            pin_btn.click(fn=handle_pin_toggle, inputs=[saved_dd, show_value_cb], outputs=saved_dd, queue=False)
-            default_btn.click(fn=handle_set_default, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, status_display], queue=False)
-            rename_btn.click(fn=handle_rename, inputs=[saved_dd, label_input, show_value_cb], outputs=[saved_dd, status_display], queue=False)
-            edit_btn.click(fn=handle_edit, inputs=[saved_dd, show_value_cb], outputs=[url_input, label_input, _editing_conn_id], queue=False)
-            export_btn.click(fn=handle_export_connections, outputs=[gr.File(label="Download"), status_display], queue=False)
-            import_btn.click(fn=lambda: gr.update(visible=True), outputs=[import_file], queue=False)
-            import_file.upload(fn=handle_import_connections, inputs=[import_file], outputs=[saved_dd, status_display], queue=False)
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
             test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display, queue=False)
             connect_btn.click(
@@ -1595,47 +1672,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
         outputs=[llm_registry_dd, chat_active_md, llmset_active_md, llm_status],
     )
 
-    # --- Delete confirmation modal ---
-    with gr.Column(visible=False, elem_id="llm-modal") as delete_confirm_modal:
-        gr.Markdown("### ⚠️ Delete Connection")
-        delete_confirm_name = gr.Textbox(label="Connection", interactive=False)
-        delete_confirm_info = gr.Textbox(label="", interactive=False, lines=3)
-        with gr.Row():
-            delete_confirm_yes = gr.Button("🗑 Delete", variant="stop", scale=1)
-            delete_confirm_no = gr.Button("Cancel", scale=1)
-        # hidden: current dd value + show_val for the actual delete
-        _delete_dd_ref = gr.Textbox(visible=False)
-        _delete_showval_ref = gr.Checkbox(visible=False)
-
-    def open_delete_confirm(display: str, show_val: bool) -> tuple:
-        conn = _find_from_dd(display, show_val)
-        if not conn:
-            return gr.update(visible=False), "", "", display, show_val
-        info_lines = []
-        if conn.get("key"):
-            info_lines.append(f"Name: {conn['key']}")
-        if conn.get("value"):
-            info_lines.append(f"URL: {conn['value']}")
-        return (
-            gr.update(visible=True),
-            conn.get("key", ""),
-            "\n".join(info_lines),
-            display,
-            show_val,
-        )
-
-    def confirm_delete_yes(dd_val: str, show_val: bool) -> tuple:
-        return handle_delete(dd_val, show_val) + (gr.update(visible=False),)
-
-    def confirm_delete_no() -> dict:
-        return gr.update(visible=False)
-
-    delete_btn.click(
-        fn=open_delete_confirm,
-        inputs=[saved_dd, show_value_cb],
-        outputs=[delete_confirm_modal, delete_confirm_name, delete_confirm_info, _delete_dd_ref, _delete_showval_ref],
-        queue=False,
-    )
+    # Delete confirmation is handled by the action dispatcher in Connection tab
     delete_confirm_yes.click(
         fn=confirm_delete_yes,
         inputs=[_delete_dd_ref, _delete_showval_ref],
