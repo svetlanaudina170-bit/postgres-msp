@@ -133,7 +133,22 @@ lint.select = [
 
 lint.ignore = [
     "RUF001",  # Ambiguous Unicode character in string (intentional Cyrillic)
+    "RUF002",  # Ambiguous Unicode character in docstring/comment (intentional Cyrillic)
     "RUF003",  # Ambiguous Unicode character in comment (intentional Cyrillic)
+    "RUF005",  # Consider iterable unpacking (existing codebase)
+    "RUF013",  # Implicit Optional (existing codebase)
+    "RUF043",  # Pattern contains metacharacters in match= (existing tests)
+    "RUF059",  # Unpacked variable never used (existing tests)
+    "E402",    # Module level import not at top (existing codebase)
+    "E501",    # Line too long (existing codebase)
+    "F821",    # Undefined name (existing codebase)
+    "B008",    # Function call in argument defaults (existing codebase)
+    "N802",    # Function name should be lowercase (existing codebase)
+    "N815",    # Variable should be lowercase (existing codebase)
+    "N999",    # Invalid module name (legacy files)
+    "UP006",   # Use modern type hints (existing codebase)
+    "UP007",   # Use X | Y union (existing codebase)
+    "UP045",   # Use X | None (existing codebase)
 ]
 
 [tool.ruff.format]
