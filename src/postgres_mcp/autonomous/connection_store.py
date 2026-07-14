@@ -71,6 +71,7 @@ def load_connections() -> list[dict]:
             c.setdefault("key", _make_key_from_url(c.get("value", "")))
             c.setdefault("value", "")
             c.setdefault("default", False)
+            c.setdefault("tags", [])
             # Расшифровка URL БД (включая пароль). Поля без префикса "fernet:"
             # (plaintext/старые записи) возвращаются как есть — обратная совместимость.
             c["value"] = decrypt_value(c["value"])
@@ -253,6 +254,57 @@ def bump_usage(conn_id: str, conns: list[dict] = None) -> list[dict]:
         if c["id"] == conn_id:
             c["use_count"] = (c.get("use_count", 0) or 0) + 1
             c["last_used"] = datetime.now(timezone.utc).isoformat()
+            break
+    save_connections(conns)
+    return conns
+
+
+def get_all_tags(conns: list[dict] = None) -> list[str]:
+    """Get all unique tags across all connections."""
+    if conns is None:
+        conns = load_connections()
+    tags = set()
+    for c in conns:
+        for t in c.get("tags", []):
+            tags.add(t)
+    return sorted(tags)
+
+
+def add_tag_to_connection(conn_id: str, tag: str, conns: list[dict] = None) -> list[dict]:
+    """Add a tag to a connection."""
+    if conns is None:
+        conns = load_connections()
+    for c in conns:
+        if c["id"] == conn_id:
+            tags = c.setdefault("tags", [])
+            if tag and tag not in tags:
+                tags.append(tag)
+            break
+    save_connections(conns)
+    return conns
+
+
+def remove_tag_from_connection(conn_id: str, tag: str, conns: list[dict] = None) -> list[dict]:
+    """Remove a tag from a connection."""
+    if conns is None:
+        conns = load_connections()
+    for c in conns:
+        if c["id"] == conn_id:
+            tags = c.get("tags", [])
+            if tag in tags:
+                tags.remove(tag)
+            break
+    save_connections(conns)
+    return conns
+
+
+def set_connection_tags(conn_id: str, tags: list[str], conns: list[dict] = None) -> list[dict]:
+    """Set tags for a connection."""
+    if conns is None:
+        conns = load_connections()
+    for c in conns:
+        if c["id"] == conn_id:
+            c["tags"] = tags
             break
     save_connections(conns)
     return conns

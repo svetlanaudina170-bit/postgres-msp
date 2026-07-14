@@ -85,6 +85,8 @@ from .connection_store import set_default
 from .connection_store import toggle_pin
 from .connection_store import update_key
 from .connection_store import update_connection
+from .connection_store import get_all_tags
+from .connection_store import set_connection_tags
 from .llm_client import LLMClient
 from .llm_client import LLMResponse
 from .llm_client import build_llm_client_from_connection
@@ -566,6 +568,20 @@ def _rebuild_saved_dd(conns: list[dict] = None, show_value: bool = False, value:
     return gr.update(**kwargs)
 
 
+def _rebuild_saved_dd_filtered(tag: str, show_value: bool = False) -> dict:
+    """Rebuild saved connections dropdown filtered by tag."""
+    conns = load_connections()
+    if tag and tag != "All":
+        conns = [c for c in conns if tag in c.get("tags", [])]
+    kwargs = dict(choices=build_choices(conns, show_value=show_value))
+    return gr.update(**kwargs)
+
+
+def handle_tag_filter(tag: str, show_val: bool) -> dict:
+    """Filter connections by tag."""
+    return _rebuild_saved_dd_filtered(tag, show_value=show_val)
+
+
 def _build_label(conn: dict, show_val: bool) -> str:
     label = conn.get("key", "")
     if conn.get("pinned"):
@@ -694,24 +710,27 @@ def handle_rename(display: str, new_key: str, show_val: bool) -> tuple[dict, str
     return gr.update(choices=build_choices(conns, show_value=show_val), value=_build_label(conn, show_val)), f"\u2705 Renamed to '{new_key}'"
 
 
-def handle_edit(display: str, show_val: bool) -> tuple[str, str, str]:
+def handle_edit(display: str, show_val: bool) -> tuple[str, str, str, str]:
     """Load selected connection into form for editing."""
     conn = _find_from_dd(display, show_val)
     if not conn:
-        return "", "", ""
-    return conn.get("value", ""), conn.get("key", ""), conn.get("id", "")
+        return "", "", "", ""
+    tags = conn.get("tags", [])
+    return conn.get("value", ""), conn.get("key", ""), conn.get("id", ""), ", ".join(tags)
 
 
-def handle_save_url_edit(url: str, key: str, editing_id: str) -> tuple[dict, str, str]:
+def handle_save_url_edit(url: str, key: str, editing_id: str, tags_str: str) -> tuple[dict, str, str]:
     """Save or update a connection."""
     if not url.strip():
         return gr.update(), "Enter a URL to save", ""
     key = key.strip() or _make_key_from_url(url)
+    tags = [t.strip() for t in (tags_str or "").split(",") if t.strip()]
     conns = load_connections()
 
     if editing_id:
         # Update existing connection
         conns = update_connection(editing_id, url, key, conns)
+        conns = set_connection_tags(editing_id, tags, conns)
         return _rebuild_saved_dd(conns), f"\u2705 Updated '{key}'", ""
 
     # New connection logic
@@ -724,8 +743,15 @@ def handle_save_url_edit(url: str, key: str, editing_id: str) -> tuple[dict, str
         return _rebuild_saved_dd(conns), "\u2705 Usage updated", ""
     if match_by_server(url, conns):
         conns = add_connection(url, key, conns)
+        # Set tags on the newly added connection
+        new_conn = find_by_key(key)
+        if new_conn:
+            conns = set_connection_tags(new_conn["id"], tags, conns)
         return _rebuild_saved_dd(conns), "\u2705 Saved as new (different database)", ""
     conns = add_connection(url, key, conns)
+    new_conn = find_by_key(key)
+    if new_conn:
+        conns = set_connection_tags(new_conn["id"], tags, conns)
     return _rebuild_saved_dd(conns), "\u2705 Connection saved", ""
 
 
@@ -735,8 +761,8 @@ async def handle_test_connection(url: str) -> str:
         return "\u26a0\ufe0f Enter a URL to test"
     target = url.strip()
     # Create a temporary pg client for testing
-    from .pg_client import PgClient
-    test_pg = PgClient()
+    from .pg_client import PostgresClient
+    test_pg = PostgresClient()
     err = await test_pg.connect(target)
     if err:
         return f"\u274c Connection failed: {err}"
@@ -769,6 +795,7 @@ def handle_export_connections() -> tuple:
             "url": masked_url,
             "pinned": c.get("pinned", False),
             "default": c.get("default", False),
+            "tags": c.get("tags", []),
         })
 
     # Create temp file
@@ -1323,8 +1350,17 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                     choices=build_choices(conns, show_value=SHOW_VAL),
                     value=initial_dd,
                     allow_custom_value=not _saved_cfg.get("readonly", False),
-                    scale=4,
+                    scale=3,
                     elem_classes="saved-dd",
+                )
+                # Tag filter
+                all_tags = get_all_tags(conns)
+                tag_filter_dd = gr.Dropdown(
+                    label="Filter by Tag",
+                    choices=["All"] + all_tags,
+                    value="All",
+                    interactive=True,
+                    scale=1,
                 )
                 # Compact actions as dropdown
                 conn_action_dd = gr.Dropdown(
@@ -1350,6 +1386,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                     )
                 with gr.Row():
                     label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
+                    tag_input = gr.Textbox(label="Tags", placeholder="tag1, tag2, ...", scale=1)
                     track_cb = gr.Checkbox(
                         label="Track changes",
                         value=os.getenv("TRACK_CHANGES", "false").lower() == "true",
@@ -1377,47 +1414,50 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 status_display = gr.Textbox(label="", interactive=False, value=_initial_status, elem_id="status_display")
 
             # --- Action dispatcher ---
-            def _dispatch_conn_action(action: str, display: str, show_val: bool, url: str, label: str, editing_id: str):
+            def _dispatch_conn_action(action: str, display: str, show_val: bool, url: str, label: str, editing_id: str, tags_str: str):
                 """Route dropdown action to the appropriate handler."""
                 if action in (None, "—"):
-                    return [gr.update()] * 10
+                    return [gr.update()] * 11
                 if action == "Pin":
                     r = handle_pin_toggle(display, show_val)
-                    return r, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                    return r, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
                 if action == "Default":
                     r1, r2 = handle_set_default(display, show_val)
-                    return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                    return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
                 if action == "Rename":
                     r1, r2 = handle_rename(display, label, show_val)
-                    return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                    return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
                 if action == "Edit":
-                    u, n, eid = handle_edit(display, show_val)
-                    return gr.update(), gr.update(), gr.update(), u, n, eid, gr.update(), gr.update(), gr.update(), gr.update()
+                    u, n, eid, t = handle_edit(display, show_val)
+                    return gr.update(), gr.update(), gr.update(), u, n, eid, t, gr.update(), gr.update(), gr.update(), gr.update()
                 if action == "Export":
                     fp, msg = handle_export_connections()
-                    return gr.update(), gr.update(), msg, gr.update(), gr.update(), gr.update(), fp, gr.update(), gr.update(), gr.update()
+                    return gr.update(), gr.update(), msg, gr.update(), gr.update(), gr.update(), gr.update(), fp, gr.update(), gr.update(), gr.update()
                 if action == "Import":
-                    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(True)
+                    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(True)
                 if action == "Delete":
                     # Open delete confirmation modal
                     r = open_delete_confirm(display, show_val)
-                    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), r[0], gr.update()
-                return [gr.update()] * 10
+                    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), r[0], gr.update(), gr.update()
+                return [gr.update()] * 11
 
-            # Outputs: saved_dd, status_display, (unused), url_input, label_input, _editing_conn_id, export_file, import_file, delete_confirm_modal, (unused)
+            # Outputs: saved_dd, status_display, (unused), url_input, label_input, _editing_conn_id, tag_input, export_file, import_file, delete_confirm_modal, (unused)
             conn_action_dd.change(
                 fn=_dispatch_conn_action,
-                inputs=[conn_action_dd, saved_dd, show_value_cb, url_input, label_input, _editing_conn_id],
-                outputs=[saved_dd, status_display, status_display, url_input, label_input, _editing_conn_id, gr.File(visible=False), import_file, delete_confirm_modal, _delete_dd_ref],
+                inputs=[conn_action_dd, saved_dd, show_value_cb, url_input, label_input, _editing_conn_id, tag_input],
+                outputs=[saved_dd, status_display, status_display, url_input, label_input, _editing_conn_id, tag_input, gr.File(visible=False), import_file, delete_confirm_modal, _delete_dd_ref],
                 queue=False,
             )
 
             # Reset action dropdown after selection
             conn_action_dd.change(fn=lambda: "—", inputs=[], outputs=[conn_action_dd], queue=False)
 
+            # --- Tag filter ---
+            tag_filter_dd.change(fn=handle_tag_filter, inputs=[tag_filter_dd, show_value_cb], outputs=[saved_dd], queue=False)
+
             # --- Direct bindings ---
             saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input], queue=False)
-            save_btn.click(fn=handle_save_url_edit, inputs=[url_input, label_input, _editing_conn_id], outputs=[saved_dd, status_display, _editing_conn_id], queue=False)
+            save_btn.click(fn=handle_save_url_edit, inputs=[url_input, label_input, _editing_conn_id, tag_input], outputs=[saved_dd, status_display, _editing_conn_id], queue=False)
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
             test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display, queue=False)
             connect_btn.click(
