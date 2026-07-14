@@ -136,11 +136,26 @@ BLOCKS_CSS = """
       pointer-events: none !important;
     }
     #llm-modal {
-      border: 1px solid var(--border-color-primary, #e0e0e0);
-      border-radius: 8px;
-      padding: 16px;
-      margin: 8px 0;
-      background: var(--background-fill-secondary, #f9f9f9);
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 9999;
+      border: 2px solid var(--border-color-primary, #888);
+      border-radius: 12px;
+      padding: 20px;
+      background: var(--background-fill-primary, #fff);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      max-width: 800px;
+      width: 90%;
+      max-height: 85vh;
+      overflow-y: auto;
+    }
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 9998;
     }
 """
 
@@ -881,21 +896,52 @@ def close_modal() -> dict:
     return gr.update(visible=False)
 
 
-def on_mode_change(mode: str) -> tuple[dict, dict, dict, dict, dict, dict, dict, dict, dict]:
+# Reverse mapping: label -> provider_id для конвертации значений из Gradio dropdown
+_PROVIDER_LABEL_TO_ID: dict[str, str] = {}
+
+
+def _build_provider_label_map():
+    """Строит маппинг label -> id для всех провайдеров."""
+    global _PROVIDER_LABEL_TO_ID
+    for section in ("cloud", "local"):
+        for pid, pcfg in PROVIDERS.get(section, {}).get("providers", {}).items():
+            _PROVIDER_LABEL_TO_ID[pcfg.get("label", pid)] = pid
+
+
+_build_provider_label_map()
+
+
+def _resolve_provider(value: str) -> str:
+    """Конвертирует label или id провайдера в id."""
+    return _PROVIDER_LABEL_TO_ID.get(value, value)
+
+
+def on_mode_change(mode: str) -> tuple[dict, dict, dict, dict, dict, dict, dict, dict, dict, dict]:
     """При смене Mode: обновить провайдеров, сбросить conn_type/model, видимость полей."""
     providers = _provider_choices(mode)
     first_provider = providers[0][0] if providers else ""
-    return _on_provider_or_ct_change(mode, first_provider, "")
+    first_label = providers[0][1] if providers else ""
+    logger.info(f"on_mode_change({mode}) -> providers={providers}, first_provider={first_provider}")
+    rest = _on_provider_or_ct_change(mode, first_provider, "")
+    return (gr.update(choices=[label for _, label in providers], value=first_label),) + rest
 
 
 def on_provider_change(provider: str, mode: str) -> tuple:
     """При смене Provider: обновить conn_types, сбросить model, видимость полей."""
-    return _on_provider_or_ct_change(mode, provider, "")
+    pid = _resolve_provider(provider)
+    models = _model_choices(pid, mode, _conn_type_choices(pid, mode)[0][0] if _conn_type_choices(pid, mode) else "")
+    logger.info(f"on_provider_change({provider} -> {pid}, {mode}) -> models={models}")
+    return _on_provider_or_ct_change(mode, pid, "")
 
 
 def on_conn_type_change(conn_type: str, provider: str, mode: str) -> tuple:
     """При смене Connection Type: обновить model, пересчитать видимость полей."""
-    return _on_provider_or_ct_change(mode, provider, conn_type)
+    pid = _resolve_provider(provider)
+    models = _model_choices(pid, mode, conn_type)
+    logger.info(f"on_conn_type_change({conn_type}, {provider} -> {pid}, {mode}) -> models={models}")
+    result = _on_provider_or_ct_change(mode, pid, conn_type)
+    # Skip first element (conn_type update) — it's the input, not an output
+    return result[1:]
 
 
 def _on_provider_or_ct_change(mode, provider, conn_type) -> tuple:
@@ -962,8 +1008,10 @@ def save_connection(
     Делает его активным. Закрывает модал. Обновляет дропдаун реестра + оба readonly-показа."""
     name = (name or "").strip()
     if not name:
+        logger.warning("save_connection: validation failed — name is empty")
         return gr.update(visible=True), "\u26a0\ufe0f Connection name is required", _active_display(), _active_display(), gr.update()
     if not provider or not conn_type:
+        logger.warning("save_connection: validation failed — provider=%s, conn_type=%s", provider, conn_type)
         return gr.update(visible=True), "\u26a0\ufe0f Provider and Connection Type are required", _active_display(), _active_display(), gr.update()
     # Валидация required-параметров
     for field in _param_fields_for_ct(conn_type):
@@ -972,6 +1020,7 @@ def save_connection(
             val = {"api_key": api_key, "base_url": base_url, "folder_id": folder_id, "anthropic_version": anthropic_version}.get(field, "")
             if not (val or "").strip():
                 label = meta.get("label", field)
+                logger.warning("save_connection: validation failed — required field '%s' is empty for conn_type=%s", field, conn_type)
                 return gr.update(visible=True), f"\u26a0\ufe0f Field '{label}' is required", _active_display(), _active_display(), gr.update()
 
     # Сбор params: только поля текущего conn_type (лишние не пишем)
@@ -990,15 +1039,22 @@ def save_connection(
         "params": params,
     }
 
+    logger.info(
+        "save_connection: name=%s, mode=%s, provider=%s, conn_type=%s, model=%s, conn_id=%s",
+        name, mode, provider, conn_type, model, conn_id or "(new)",
+    )
+
     if conn_id:
         # Редактирование существующего
         llm_conn_store.update_llm_connection(conn_id, conn_record, secret_fields_map=SECRET_FIELDS_MAP)
         llm_conn_store.set_active_llm_connection(conn_id, secret_fields_map=SECRET_FIELDS_MAP)
         save_env_file({"ACTIVE_LLM_CONNECTION": name})
         msg = f"\u2705 Updated and activated '{name}'"
+        logger.info("save_connection: updated existing conn_id=%s -> '%s'", conn_id, name)
     else:
         # Проверка уникальности имени
         if llm_conn_store.is_name_taken(name, secret_fields_map=SECRET_FIELDS_MAP):
+            logger.warning("save_connection: name '%s' already taken, rejecting", name)
             return (
                 gr.update(visible=True),
                 f"\u26a0\ufe0f Name '{name}' already used. Choose a different name.",
@@ -1009,9 +1065,11 @@ def save_connection(
         llm_conn_store.add_llm_connection(conn_record, make_active=True, secret_fields_map=SECRET_FIELDS_MAP)
         save_env_file({"ACTIVE_LLM_CONNECTION": name})
         msg = f"\u2705 Saved and activated '{name}'"
+        logger.info("save_connection: created new connection '%s'", name)
 
     new_choices = _llm_conn_choices()
     new_active = _active_display()
+    logger.info("save_connection: done — '%s' is now active, modal closed", name)
     # Возвращаем: modal(visible=False), llm_status, chat_active_md, llmset_active_md, registry_dd
     return gr.update(visible=False), msg, new_active, new_active, gr.update(choices=new_choices, value=name)
 
@@ -1053,6 +1111,22 @@ elif db_url:
 
 # Логирование статуса шифрования при старте
 llm_conn_store.log_encryption_status()
+
+# Auto-connect to DATABASE_URL on startup if set
+import asyncio as _asyncio
+_initial_status = ""
+if db_url:
+    try:
+        loop = _asyncio.new_event_loop()
+        err = loop.run_until_complete(pg.connect(db_url))
+        if not err:
+            r = loop.run_until_complete(pg.execute_sql("SELECT version()"))
+            _initial_status = f"\u2705 Connected\n{r.rows[0][0] if r.rows else ''}" if not r.error else f"\u274c {r.error}"
+        else:
+            _initial_status = f"\u274c {err}"
+        loop.close()
+    except Exception as e:
+        _initial_status = f"\u274c {e}"
 
 # Начальный показ активного LLM-подключения
 _INITIAL_ACTIVE_MD = _active_display()
@@ -1112,7 +1186,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             with gr.Row():
                 disconnect_btn = gr.Button("\u2716 Disconnect", variant="stop", scale=1, visible=False)
             with gr.Row():
-                status_display = gr.Textbox(label="Status / Databases", interactive=False, scale=3)
+                status_display = gr.Textbox(label="Status / Databases", interactive=False, scale=3, value=_initial_status)
 
             saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input], queue=False)
             save_btn.click(fn=handle_save_url, inputs=[url_input, label_input], outputs=[saved_dd, status_display], queue=False)
