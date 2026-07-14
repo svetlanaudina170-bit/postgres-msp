@@ -84,6 +84,7 @@ from .connection_store import parse_display
 from .connection_store import set_default
 from .connection_store import toggle_pin
 from .connection_store import update_key
+from .connection_store import update_connection
 from .llm_client import LLMClient
 from .llm_client import LLMResponse
 from .llm_client import build_llm_client_from_connection
@@ -693,6 +694,41 @@ def handle_rename(display: str, new_key: str, show_val: bool) -> tuple[dict, str
     return gr.update(choices=build_choices(conns, show_value=show_val), value=_build_label(conn, show_val)), f"\u2705 Renamed to '{new_key}'"
 
 
+def handle_edit(display: str, show_val: bool) -> tuple[str, str, str]:
+    """Load selected connection into form for editing."""
+    conn = _find_from_dd(display, show_val)
+    if not conn:
+        return "", "", ""
+    return conn.get("value", ""), conn.get("key", ""), conn.get("id", "")
+
+
+def handle_save_url_edit(url: str, key: str, editing_id: str) -> tuple[dict, str, str]:
+    """Save or update a connection."""
+    if not url.strip():
+        return gr.update(), "Enter a URL to save", ""
+    key = key.strip() or _make_key_from_url(url)
+    conns = load_connections()
+
+    if editing_id:
+        # Update existing connection
+        conns = update_connection(editing_id, url, key, conns)
+        return _rebuild_saved_dd(conns), f"\u2705 Updated '{key}'", ""
+
+    # New connection logic
+    if is_key_taken(key, conns=conns):
+        existing = find_by_key(key)
+        if existing and existing.get("value") != url:
+            return gr.update(), f"\u26a0\ufe0f Name '{key}' already used. Choose a different name.", ""
+    if match_existing(url, conns):
+        conns = bump_usage(match_existing(url, conns)["id"], conns)
+        return _rebuild_saved_dd(conns), "\u2705 Usage updated", ""
+    if match_by_server(url, conns):
+        conns = add_connection(url, key, conns)
+        return _rebuild_saved_dd(conns), "\u2705 Saved as new (different database)", ""
+    conns = add_connection(url, key, conns)
+    return _rebuild_saved_dd(conns), "\u2705 Connection saved", ""
+
+
 def handle_delete(display: str, show_val: bool) -> tuple[dict, str, str, str]:
     conn = _find_from_dd(display, show_val)
     if not conn:
@@ -1160,6 +1196,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 pin_btn = gr.Button("\U0001f4cc Pin", scale=1)
                 default_btn = gr.Button("\u2b50 Default", scale=1)
                 rename_btn = gr.Button("\u270f Rename", scale=1)
+                edit_btn = gr.Button("\u270f Edit", scale=1)
                 delete_btn = gr.Button("\U0001f5d1 Delete", scale=1)
             with gr.Row():
                 label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
@@ -1174,6 +1211,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                     scale=1,
                 )
             save_btn = gr.Button("\U0001f4be Save This URL")
+            _editing_conn_id = gr.Textbox(visible=False)  # tracks connection being edited
             with gr.Row():
                 url_input = gr.Textbox(label="URL", placeholder="postgresql://user:pass@host:5432/db", scale=3, value=db_url)
                 db_selector = gr.Dropdown(
@@ -1194,10 +1232,11 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 status_display = gr.Textbox(label="Status / Databases", interactive=False, scale=3, value=_initial_status, elem_id="status_display")
 
             saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input], queue=False)
-            save_btn.click(fn=handle_save_url, inputs=[url_input, label_input], outputs=[saved_dd, status_display], queue=False)
+            save_btn.click(fn=handle_save_url_edit, inputs=[url_input, label_input, _editing_conn_id], outputs=[saved_dd, status_display, _editing_conn_id], queue=False)
             pin_btn.click(fn=handle_pin_toggle, inputs=[saved_dd, show_value_cb], outputs=saved_dd, queue=False)
             default_btn.click(fn=handle_set_default, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, status_display], queue=False)
             rename_btn.click(fn=handle_rename, inputs=[saved_dd, label_input, show_value_cb], outputs=[saved_dd, status_display], queue=False)
+            edit_btn.click(fn=handle_edit, inputs=[saved_dd, show_value_cb], outputs=[url_input, label_input, _editing_conn_id], queue=False)
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
             connect_btn.click(
                 fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False
