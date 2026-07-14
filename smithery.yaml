@@ -1,0 +1,44 @@
+# Анализ файла smithery.yaml
+#
+# Описание файла:
+# Файл smithery.yaml является конфигурационным файлом для платформы Smithery, используемой для настройки
+# и запуска PostgreSQL MCP (Management Control Plane). Он определяет параметры запуска, схему конфигурации
+# и функцию для генерации команды CLI, которая запускает MCP через стандартный ввод-вывод (stdio).
+# Файл соответствует спецификации Smithery (см. https://smithery.ai/docs/config#smitheryyaml).
+#
+# Основные компоненты:
+# - `startCommand`: определяет способ запуска MCP
+# - `type`: указывает тип интерфейса (stdio)
+# - `configSchema`: JSON-схема для валидации параметров конфигурации
+# - `commandFunction`: функция, генерирующая команду для запуска MCP
+#
+# Зависимости:
+# Файл предполагает наличие окружения с установленным PostgreSQL MCP и доступом к указанному `databaseUri`.
+#
+# Примечания:
+# - Конфигурация требует обязательных параметров `databaseUri` и `accessMode`.
+# - Функция `commandFunction` написана в формате YAML с использованием JavaScript-синтаксиса для генерации команды.
+
+```yaml
+# Конфигурационный файл Smithery: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON-схема, определяющая параметры конфигурации для MCP
+    type: object
+    required:
+      - databaseUri
+      - accessMode
+    properties:
+      databaseUri:
+        type: string
+        description: URI для доступа к базе данных, например, postgres://user:password@host:port/database
+      accessMode:
+        type: string
+        description: Режим доступа для MCP, например, "restricted" или "unrestricted"
+  commandFunction:
+    # Функция, генерирующая CLI-команду для запуска MCP через stdio
+    |-
+      (config) => ({command: '/app/docker-entrypoint.sh', args: ['postgres-mcp', '--access-mode', config.accessMode], env: {DATABASE_URI: config.databaseUri}})
+```

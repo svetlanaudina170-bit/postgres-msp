@@ -1,0 +1,12 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://user:password@localhost:5432/mcp_db}
+    volumes:
+      - ../src:/app/src
+    command: python -m postgres_mcp.server

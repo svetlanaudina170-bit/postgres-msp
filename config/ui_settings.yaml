@@ -1,0 +1,94 @@
+# =========================================================================
+# ui_settings.yaml
+# Настройки UI-элементов (дропдауны/выпадающие списки) вкладок
+# Connection, Chat, LLM Settings.
+#
+# readonly: true  -> allow_custom_value=False в Gradio Dropdown
+#                     (пользователь может ТОЛЬКО выбрать значение из списка,
+#                      вписать своё значение нельзя)
+# readonly: false -> allow_custom_value=True
+#                     (можно и выбрать из списка, и вписать произвольный текст)
+#
+# Файл читается один раз при старте app.py. Изменения вступают в силу
+# после перезапуска сервера.
+#
+# Если файл отсутствует или повреждён — app.py использует встроенные
+# резервные (fallback) значения, идентичные тем, что были в коде раньше,
+# так что приложение не упадёт, но патч почти наверняка "потеряется" —
+# лучше проверить логи (warning "Failed to load ui_settings.yaml").
+# =========================================================================
+# VERSION: 1.0.0
+# Path: config/ui_settings.yaml
+# Изменения: файл создан — вынесены настройки дропдаунов из app.py
+# =========================================================================
+
+connection_tab:
+  saved_connections:
+    label: "Saved Connections"
+    # Редактируемый (allow_custom_value=True): позволяет вписать URL/имя
+    # вручную, не выбирая из уже сохранённых подключений — например,
+    # для разового теста без сохранения в connections.json.
+    readonly: false
+
+  database:
+    label: "Database"
+    # ReadOnly (allow_custom_value=False): список баз заполняется ТОЛЬКО
+    # через кнопку "Discover Databases". Свободный ввод имени базы отключён
+    # намеренно — исключает опечатки и попытки подключиться к несуществующей БД.
+    readonly: true
+
+chat_tab:
+  mode:
+    label: "Mode"
+    # Режим работы LLM на вкладке Chat: remote (облачные провайдеры) | local
+    choices: ["remote", "local"]
+
+  provider:
+    label: "Provider"
+    # ReadOnly: список провайдеров жёстко связан с логикой build_llm_client()
+    # в app.py — добавление нового провайдера требует правки кода,
+    # поэтому свободный ввод здесь не имеет смысла.
+    readonly: true
+    choices: ["openai", "anthropic", "google", "local"]
+
+  model:
+    label: "Model"
+    # Редактируемый (allow_custom_value=True): провайдеры выпускают новые
+    # модели чаще, чем обновляется список ниже — разрешаем вписать
+    # произвольное имя модели вручную.
+    readonly: false
+    # Список моделей-подсказок по провайдерам (не ограничивает ввод,
+    # т.к. readonly=false — это просто быстрые варианты в выпадающем списке).
+    models_by_provider:
+      openai:
+        - gpt-4o-mini
+        - gpt-4o
+        - gpt-4o-turbo
+        - gpt-4
+        - gpt-4-turbo
+        - gpt-3.5-turbo
+        - o1-mini
+        - o1-preview
+        - o3-mini
+      anthropic:
+        - claude-3-5-sonnet-latest
+        - claude-3-5-haiku-latest
+        - claude-3-opus-latest
+        - claude-3-haiku-latest
+        - claude-2
+        - claude-instant-1.2
+      google:
+        - gemini-2.0-flash
+        - gemini-2.0-pro-exp
+        - gemini-1.5-flash
+        - gemini-1.5-pro
+        - gemini-1.5-pro-001
+      local:
+        - local-model
+
+llm_settings_tab:
+  provider:
+    label: "Provider"
+    # ReadOnly по той же причине, что и провайдер на вкладке Chat.
+    readonly: true
+    choices: ["openai", "anthropic", "google"]

@@ -1,0 +1,289 @@
+# =========================================================================
+# providers.yaml
+# Каталог провайдеров/типов подключений/моделей для вкладки LLM Settings.
+#
+# 4-уровневая иерархия:
+#   Mode (cloud | local)
+#     -> Provider (openai, anthropic, vsegpt, yandex, ollama, ...)
+#        -> Connection Type (openai_compatible, anthropic_native, ...)
+#           -> Model (gpt-4o-mini, claude-3-5-sonnet-latest, llama3.1, ...)
+#
+# connection_types: общие описания типов подключения (формат API, параметры,
+#   эндпоинт живого получения моделей). Ключ — идентификатор типа.
+# cloud / local: секции провайдеров, сгруппированные по режиму. Каждый
+#   провайдер ссылается на один или несколько connection_types и задаёт
+#   список моделей по каждому типу.
+#
+# Флаги видимости/актуальности:
+#   enabled: true/false  — на уровне секции (cloud/local) и провайдера.
+#     false = провайдер скрыт из UI, не удаляется из файла. Удобно для
+#     временного сокрытия устаревших/нерабочих провайдеров.
+#   Глобальные переопределения через .env (пусто = использовать YAML):
+#     LLM_CLOUD_ENABLED  — показать/скрыть всю секцию cloud
+#     LLM_LOCAL_ENABLED  — показать/скрыть всю секцию local
+#
+# params_override на уровне провайдера: позволяет переопределить default
+#   значение параметра connection_type для конкретного провайдера
+#   (например, задать дефолтный base_url для Ollama = http://localhost:11434/v1).
+#
+# Файл читается один раз при старте app.py. При отсутствии/повреждении
+# используется встроенный fallback (минимальный набор openai/anthropic/
+# google/local). Правки вступают в силу после перезапуска сервера.
+# =========================================================================
+# VERSION: 1.0.0
+# Path: config/providers.yaml
+# Изменения: файл создан — вынесена 4-уровневая иерархия LLM-подключений
+# =========================================================================
+
+# --- Типы подключений (формат API + параметры + live-models endpoint) ---
+connection_types:
+  openai_compatible:
+    label: "OpenAI-compatible (chat/completions)"
+    # какой из методов LLMClient использовать: openai | anthropic | google
+    llm_method: openai
+    params:
+      api_key:
+        label: "API Key"
+        required: false        # false = допускается пусто (некоторые локальные серверы не требуют ключ)
+        secret: true
+        placeholder: "sk-..."
+      base_url:
+        label: "Base URL"
+        required: true
+        secret: false
+        placeholder: "https://api.openai.com/v1"
+    # Эндпоинт для кнопки "Fetch models". null = живой запрос не поддерживается.
+    models_endpoint: "/models"
+    # Формат ответа /models: openai (стандартный {data:[{id:...}]})
+    models_endpoint_format: openai
+
+  anthropic_native:
+    label: "Anthropic native (messages)"
+    llm_method: anthropic
+    params:
+      api_key:
+        label: "API Key"
+        required: true
+        secret: true
+        placeholder: "sk-ant-..."
+      base_url:
+        label: "Base URL"
+        required: false
+        secret: false
+        default: "https://api.anthropic.com/v1"
+        placeholder: "https://api.anthropic.com/v1"
+      anthropic_version:
+        label: "anthropic-version"
+        required: true
+        secret: false
+        default: "2023-06-01"
+        placeholder: "2023-06-01"
+    models_endpoint: null
+
+  google_native:
+    label: "Google AI (generateContent)"
+    llm_method: google
+    params:
+      api_key:
+        label: "API Key"
+        required: true
+        secret: true
+        placeholder: "AIza..."
+      base_url:
+        label: "Base URL"
+        required: false
+        secret: false
+        default: "https://generativelanguage.googleapis.com/v1beta"
+        placeholder: "https://generativelanguage.googleapis.com/v1beta"
+    models_endpoint: null
+
+  yandex_native:
+    label: "Yandex Cloud (OpenAI-compat gateway)"
+    # Yandex предоставляет OpenAI-совместимый шлюз — используем openai-метод
+    llm_method: openai
+    params:
+      api_key:
+        label: "API Key"
+        required: true
+        secret: true
+        placeholder: "AQVN..."
+      folder_id:
+        label: "Folder ID"
+        required: true
+        secret: false
+        placeholder: "b1g..."
+      base_url:
+        label: "Base URL"
+        required: true
+        secret: false
+        default: "https://llm.api.cloud.yandex.net/v1"
+        placeholder: "https://llm.api.cloud.yandex.net/v1"
+    models_endpoint: null
+
+# --- Облачные провайдеры ---
+cloud:
+  enabled: true
+  providers:
+    openai:
+      enabled: true
+      label: "OpenAI"
+      connection_types: [openai_compatible]
+      params_override:
+        openai_compatible:
+          base_url:
+            default: "https://api.openai.com/v1"
+      models:
+        openai_compatible:
+          - gpt-4o-mini
+          - gpt-4o
+          - gpt-4.1
+          - gpt-4.1-mini
+          - gpt-4-turbo
+          - gpt-3.5-turbo
+          - o1-mini
+          - o1-preview
+          - o3-mini
+
+    anthropic:
+      enabled: true
+      label: "Anthropic"
+      connection_types: [anthropic_native]
+      models:
+        anthropic_native:
+          - claude-3-5-sonnet-latest
+          - claude-3-5-haiku-latest
+          - claude-3-opus-latest
+          - claude-3-haiku-latest
+
+    google:
+      enabled: true
+      label: "Google"
+      connection_types: [google_native]
+      models:
+        google_native:
+          - gemini-2.0-flash
+          - gemini-2.0-pro-exp
+          - gemini-1.5-flash
+          - gemini-1.5-pro
+          - gemini-1.5-pro-001
+
+    vsegpt:
+      enabled: true
+      label: "VseGPT"
+      # Агрегатор: OpenAI-совместимый шлюз к сотням моделей разных вендоров.
+      # Список моделей лучше получать через "Fetch models".
+      connection_types: [openai_compatible]
+      params_override:
+        openai_compatible:
+          base_url:
+            default: "https://api.vsegpt.ru/v1"
+      models:
+        openai_compatible:
+          - gpt-4o
+          - gpt-4o-mini
+          - claude-3-5-sonnet-20241022
+          - deepseek-chat
+          - deepseek-reasoner
+
+    yandex:
+      enabled: true
+      label: "Yandex Cloud"
+      connection_types: [yandex_native]
+      models:
+        yandex_native:
+          - yandexgpt
+          - yandexgpt-lite
+          - yandexgpt-32k
+
+    openrouter:
+      enabled: true
+      label: "OpenRouter"
+      # Ещё один OpenAI-совместимый агрегатор моделей.
+      connection_types: [openai_compatible]
+      params_override:
+        openai_compatible:
+          base_url:
+            default: "https://openrouter.ai/api/v1"
+      models:
+        openai_compatible:
+          - openai/gpt-4o-mini
+          - anthropic/claude-3.5-sonnet
+          - google/gemini-flash-1.5
+          - meta-llama/llama-3.1-70b-instruct
+
+# --- Локальные провайдеры (концентраторы) ---
+local:
+  enabled: true
+  providers:
+    lmstudio:
+      enabled: true
+      label: "LM Studio"
+      connection_types: [openai_compatible]
+      params_override:
+        openai_compatible:
+          base_url:
+            default: "http://localhost:1234/v1"
+          api_key:
+            # LM Studio игнорирует ключ, но поле нужно для совместимости —
+            # оставляем required=false и без placeholder по умолчанию.
+            required: false
+      models:
+        openai_compatible: []   # всегда через "Fetch models" — модели локальные
+
+    ollama:
+      enabled: true
+      label: "Ollama"
+      connection_types: [openai_compatible]
+      params_override:
+        openai_compatible:
+          base_url:
+            default: "http://localhost:11434/v1"
+          api_key:
+            required: false
+      models:
+        openai_compatible:
+          - llama3.1
+          - llama3.1:8b
+          - qwen2.5
+          - mistral
+          - phi3
+          - gemma2
+
+    vllm:
+      enabled: true
+      label: "vLLM"
+      connection_types: [openai_compatible]
+      params_override:
+        openai_compatible:
+          base_url:
+            default: "http://localhost:8000/v1"
+          api_key:
+            required: false
+      models:
+        openai_compatible: []   # через "Fetch models"
+
+    llamacpp:
+      enabled: true
+      label: "llama.cpp"
+      connection_types: [openai_compatible]
+      params_override:
+        openai_compatible:
+          base_url:
+            default: "http://localhost:8080/v1"
+          api_key:
+            required: false
+      models:
+        openai_compatible: []   # через "Fetch models" или вручную
+
+    text-generation-webui:
+      enabled: false   # по умолчанию скрыт: менее популярный, требует ручной настройки
+      label: "text-generation-webui"
+      connection_types: [openai_compatible]
+      params_override:
+        openai_compatible:
+          base_url:
+            default: "http://localhost:5000/v1"
+          api_key:
+            required: false
+      models:
+        openai_compatible: []

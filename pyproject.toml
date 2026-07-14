@@ -1,0 +1,160 @@
+# =========================================================================
+# VERSION: 0.3.2
+# Path: pyproject.toml
+# Изменения в 0.3.2:
+#  - В [project] dependencies добавлены пакеты, которые реально
+#    импортируются кодом autonomous/, но ранее отсутствовали в корневом
+#    pyproject (были только в requirements.txt / src/pyproject.toml):
+#      gradio, asyncpg, pyyaml, python-dotenv, cryptography, httpx
+#    Без них установка проекта через "pip install -e ." (по pyproject)
+#    запускала бы MCP-сервер, но НЕ UI (app.py падал на import gradio/yaml).
+#  - Аннотация версии в заголовке приведена в соответствие с version = "0.3.2"
+#    (раньше заголовок говорил 0.3.1, а поле version = "0.3.0" — расхождение).
+# Изменения в 0.3.1:
+#  🔴 КРИТИЧЕСКИЙ БАГ ИСПРАВЛЕН: файл в исходном виде НЕ парсился как TOML
+# (проверено: python3 -c "import tomllib; tomllib.load(open('pyproject.toml','rb'))"
+# -> "Invalid statement (at line 25, column 1)"). Причина — в файл были
+# вставлены markdown-разметка ```toml / ``` (похоже, скопировано из
+# чата вместе с обрамлением кодового блока, а не только сам TOML).
+# Из-за этого uv sync / pip install -e . / hatchling build падали бы
+# с ошибкой парсинга — проект в таком виде НЕ СОБИРАЕТСЯ.
+# Исправление: убраны строки ```toml и ``` (строки 25 и 120 в исходнике),
+# сама структура/зависимости/версия — НЕ менялись, только markdown-мусор.
+# Пояснительный текст в начале файла сохранён как TOML-комментарии
+# (у него и так был префикс "#", валидно).
+# Проверено повторно: tomllib.load() -> OK.
+# =========================================================================
+
+# Анализ файла pyproject.toml
+#
+# Описание файла:
+# Файл pyproject.toml является конфигурационным файлом для проекта `postgres-mcp`, который представляет
+# собой инструмент для настройки и анализа PostgreSQL. Файл определяет метаданные проекта, зависимости,
+# настройки сборки, скрипты, а также конфигурации для инструментов линтинга, тестирования и проверки типов.
+# Формат соответствует стандарту PEP 621 и используется для управления проектом с помощью инструментов,
+# таких как Hatch, Black, Ruff, Pytest и Pyright.
+#
+# Основные компоненты:
+# - `[project]`: Метаданные проекта и зависимости
+# - `[build-system]`: Настройки системы сборки
+# - `[project.scripts]`: Определение CLI-скрипта
+# - `[tool.*]`: Настройки для инструментов (Pytest, Black, Ruff, Pyright)
+# - `[dependency-groups]`: Группы зависимостей для разработки
+#
+# Зависимости:
+# Проект зависит от пакетов, указанных в `dependencies` и `dev`, а также требует Python версии >=3.12.
+# Используется Hatchling как система сборки.
+#
+# Примечания:
+# - Некоторые настройки Pyright закомментированы, что указывает на их необязательное использование.
+# - Конфигурация Ruff включает выбор конкретных правил линтинга и исключение виртуального окружения.
+# - FastMCP (mcp.server.fastmcp) уже доступен через зависимость "mcp[cli]" ниже —
+#   отдельный пакет "fastmcp" добавлять не требуется (см. mcp_server.py VERSION 2.0.0).
+
+[project]
+name = "postgres-mcp"
+version = "0.3.2"
+description = "PostgreSQL Tuning and Analysis Tool"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # MCP-сервер (FastMCP входит в mcp[cli])
+    "mcp[cli]>=1.5.0",
+    # PostgreSQL: основная БД-часть + пул соединений
+    "psycopg[binary]>=3.2.6",
+    "psycopg-pool>=3.2.6",
+    "asyncpg>=0.29.0",
+    # UI (Gradio)
+    "gradio>=5.0.0,<6.0",
+    # LLM-клиент: HTTP + Anthropic SDK (openai/google — через httpx напрямую)
+    "httpx>=0.27.0",
+    "anthropic>=0.40.0",
+    # Конфигурация: YAML-каталоги + .env + шифрование секретов
+    "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.1",
+    "cryptography>=43.0.3",
+    # Утилиты
+    "humanize>=4.8.0",
+    "pglast==7.2.0",
+    "attrs>=25.3.0",
+    "instructor>=1.7.9",
+]
+license = "mit"
+license-files = ["LICENSE"]
+
+[[project.authors]]
+name = "Johann Schleier-Smith"
+email = "jssmith@crystal.cloud"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+postgres-mcp = "postgres_mcp:main"
+
+# [tool.pyright]
+# venvPath = "."
+# venv = ".venv"
+
+[tool.pytest.ini_options]
+pythonpath = ["./src"]
+asyncio_default_fixture_loop_scope = "function"
+
+[dependency-groups]
+dev = [
+    "docker>=7.1.0",
+    "pyright==1.1.398",
+    "pytest-asyncio>=0.26.0",
+    "pytest>=8.3.5",
+    "ruff==0.11.2",
+]
+
+[tool.black]
+line-length = 150
+
+[tool.ruff]
+line-length = 150
+target-version = "py38"
+exclude = [".venv*"]
+
+lint.select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "W",   # pycodestyle warnings
+    # "C90", # mccabe complexity
+    "N",   # pep8-naming
+    # "D",   # pydocstyle
+    "UP",  # pyupgrade
+    "RUF"  # ruff-specific rules
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+known-first-party = ["postgres-mcp"]
+
+[tool.pyright]
+typeCheckingMode = "standard"
+pythonVersion = "3.12"
+strictParameterNullChecking = true
+reportMissingTypeStubs = false
+# reportUnknownMemberType = true
+# reportUnknownParameterType = true
+# reportUnknownVariableType = true
+# reportUnknownArgumentType = true
+reportPrivateUsage = true
+reportUntypedFunctionDecorator = true
+reportMissingTypeArgument = true
+reportInvalidTypeVarUse = true
+reportUnnecessaryCast = true
+# reportUnnecessaryComparison = true

@@ -1,0 +1,20 @@
+aiohttp==3.9.1
+attrs==25.3.0
+fastapi==0.115.13
+humanize==4.12.3
+instructor==1.9.0
+mcp==1.9.4
+openai==1.91.0
+pglast==7.7
+psycopg==3.2.9
+psycopg_pool==3.2.6
+pydantic==2.11.7
+python-dotenv==1.1.1
+Requests==2.32.4
+typing_extensions==4.14.0
+uvicorn==0.34.3
+
+# --- Autonomous UI ---
+gradio>=5.0.0
+asyncpg>=0.29.0
+python-dotenv>=1.0.0

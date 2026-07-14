@@ -1,0 +1,138 @@
+Структура папки: G:\postgres-mcp
+
+├── .env
+├── .github
+│   └── workflows
+│       ├── build.yml
+│       └── docker-build-dockerhub.yml
+├── .gitignore
+├── .python-version
+├── Arhive
+├── Docker
+│   └── Build Docker.md
+├── Dockerfile
+├── Dockerfile-en
+├── LICENSE
+├── LICENSE-en
+├── README-en.md
+├── README.md
+├── archives
+│   ├── backup-20260708-152921.zip
+│   ├── backup-20260708-175444.zip
+│   └── backup-autonomous-20260708-232910.zip
+├── assets
+│   └── postgres-mcp-pro.png
+├── config
+│   └── logs
+│       ├── host.log
+│       └── server_user123.log
+├── connections.json
+├── devenv-all.yaml
+├── devenv-en.nix
+├── devenv-en.yaml
+├── devenv.lock
+├── devenv.nix
+├── devenv.yaml
+├── docker-entrypoint-en.sh
+├── docker-entrypoint.sh
+├── examples
+│   ├── movie-app-rus.md
+│   └── movie-app.md
+├── import.py
+├── justfile
+├── mcp_config.json
+├── postgres-mcp-all-in-one.sh
+├── pyproject-en.toml
+├── pyproject.toml
+├── requirements.txt
+├── run_mcp_auto.cmd
+├── run_ui.cmd
+├── server_old on 25.06.2025 12.50.py
+├── smithery-en.yaml
+├── smithery.yaml
+├── src
+│   ├── .gitignore
+│   ├── Dockerfile
+│   ├── README.md
+│   ├── config
+│   │   └── logs
+│   │       └── host.log
+│   ├── docker-compose.yml
+│   ├── logs
+│   │   └── server.log
+│   ├── mcp_config.json
+│   ├── postgres_mcp
+│   │   ├── .env
+│   │   ├── __init__.py
+│   │   ├── artifacts.py
+│   │   ├── autonomous
+│   │   │   ├── __init__.py
+│   │   │   ├── app.py
+│   │   │   ├── connection_store.py
+│   │   │   ├── llm_client.py
+│   │   │   ├── mcp_server.py
+│   │   │   └── pg_client.py
+│   │   ├── database_health
+│   │   │   ├── __init__.py
+│   │   │   ├── buffer_health_calc.py
+│   │   │   ├── connection_health_calc.py
+│   │   │   ├── constraint_health_calc.py
+│   │   │   ├── database_health.py
+│   │   │   ├── index_health_calc.py
+│   │   │   ├── init.sql
+│   │   │   ├── replication_calc.py
+│   │   │   ├── sequence_health_calc.py
+│   │   │   └── vacuum_health_calc.py
+│   │   ├── explain
+│   │   │   ├── README.md
+│   │   │   ├── __init__.py
+│   │   │   └── explain_plan.py
+│   │   ├── host-latest-24-06-2025-12-30_.py
+│   │   ├── host-latest.py
+│   │   ├── index
+│   │   │   ├── dta_calc.py
+│   │   │   ├── index_opt_base.py
+│   │   │   ├── llm_opt.py
+│   │   │   └── presentation.py
+│   │   ├── server.py
+│   │   ├── sql
+│   │   │   ├── __init__.py
+│   │   │   ├── bind_params.py
+│   │   │   ├── extension_utils.py
+│   │   │   ├── index.py
+│   │   │   ├── safe_sql.py
+│   │   │   └── sql_driver.py
+│   │   └── top_queries
+│   │       ├── __init__.py
+│   │       └── top_queries_calc.py
+│   ├── pyproject.toml
+│   └── requirements.txt
+├── tests
+│   ├── Dockerfile.postgres-hypopg
+│   ├── README.md
+│   ├── conftest.py
+│   ├── integration
+│   │   ├── dta
+│   │   │   └── test_dta_calc_integration.py
+│   │   └── test_top_queries_integration.py
+│   ├── unit
+│   │   ├── database_health
+│   │   │   └── test_database_health_tool.py
+│   │   ├── explain
+│   │   │   ├── test_explain_plan.py
+│   │   │   ├── test_explain_plan_real_db.py
+│   │   │   ├── test_server.py
+│   │   │   └── test_server_integration.py
+│   │   ├── index
+│   │   │   └── test_dta_calc.py
+│   │   ├── sql
+│   │   │   ├── test_db_conn_pool.py
+│   │   │   ├── test_obfuscate_password.py
+│   │   │   ├── test_readonly_enforcement.py
+│   │   │   ├── test_safe_sql.py
+│   │   │   └── test_sql_driver.py
+│   │   ├── test_access_mode.py
+│   │   └── top_queries
+│   │       └── test_top_queries_calc.py
+│   └── utils.py
+└── uv.lock

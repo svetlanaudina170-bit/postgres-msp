@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+# =========================================================================
+# VERSION: 1.1.0
+# Path: devenv.yaml
+# Изменения: добавлен только этот версионный заголовок, содержимое не
+# менялось. Postgres-сервис и Python-зависимости (fastmcp) НЕ относятся
+# к этому файлу — devenv.yaml отвечает только за источники Nix-пакетов
+# (inputs), сами сервисы/пакеты настраиваются в devenv.nix /
+# pyproject.toml соответственно.
+# =========================================================================
+
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+  nixpkgs-unstable:
+    url: github:nixos/nixpkgs/nixpkgs-unstable
+  nixpkgs-python:
+    url: github:cachix/nixpkgs-python
+    inputs:
+      nixpkgs:
+        follows: nixpkgs

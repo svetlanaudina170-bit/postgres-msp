@@ -1,0 +1,47 @@
+{
+  "mcpServers": {
+    "postgres-mcp-tools-server": {
+      "command": "python",
+      "args": ["server.py", "--database-url", "postgresql://postgres:pl437jsop@localhost:5432/postgres", "--access-mode", "unrestricted"],
+      "env": {
+        "PYTHONPATH": ".",
+        "DATABASE_URL": "postgresql://postgres:pl437jsop@localhost:5432/postgres",
+        "ACCESS_MODE": "unrestricted",
+        "LOG_LEVEL": "DEBUG",
+        "LOG_TO_FILE": "true",
+        "LOGS_PATH": "./logs",
+        "SERVER_LOG_FILE": "server_user123"
+      },
+      "transport": {
+        "type": "sse",
+        "url": "http://localhost:5001/sse"
+      },
+      "capabilities": {
+        "tools": {
+          "listChanged": true
+        },
+        "resources": {
+          "subscribe": false,
+          "listChanged": false
+        },
+        "prompts": {
+          "listChanged": false
+        },
+        "logging": {}
+      },
+      "metadata": {
+        "name": "PostgreSQL MCP Tools Server",
+        "description": "Сервер с инструментами для работы с PostgreSQL, включая list_schemas, execute_sql и анализ производительности.",
+        "version": "1.0.0",
+        "author": "Юдин Николай ООО Витро Софт",
+        "homepage": "http://localhost:5001/sse",
+        "repository": ""
+      }
+    }
+  },
+  "globalSettings": {
+    "timeout": 30000,
+    "retryAttempts": 3,
+    "logLevel": "DEBUG"
+  }
+}

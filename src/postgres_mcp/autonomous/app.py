@@ -1,0 +1,1173 @@
+# =========================================================================
+# VERSION: 1.5.0
+# Path: src/postgres_mcp/autonomous/app.py
+# Изменения в 1.5.0 (РЕАЛИЗАЦИЯ 4-уровневой иерархии LLM-подключений):
+#  - ВНИМАНИЕ: заголовок v1.4.0 в предыдущей версии ОПИСЫВАЛ эту фичу, но
+#    код её не реализовывал (импорты build_llm_client_from_connection /
+#    llm_conn_store были, но нигде не использовались; вкладки Chat/LLM
+#    Settings оставались старыми). Эта версия — первая, где фича реально
+#    работает end-to-end.
+#  - ВКЛАДКА LLM SETTINGS ПЕРЕРАБОТАНА: вместо плоской формы
+#    (Provider + Model + API Key + Base URL) теперь реестр подключений
+#    (llm_connections.json) + модальное окно с 4-уровневым селектором:
+#       Mode (Cloud/Local)
+#         -> Provider (OpenAI, Anthropic, VseGPT, Yandex, Ollama, LM Studio, ...)
+#            -> Connection Type (OpenAI-compatible / Anthropic native / Google / Yandex)
+#               -> Model
+#    Параметры подключения (api_key, base_url, folder_id, anthropic_version)
+#    показываются/скрываются автоматически в зависимости от выбранного
+#    Connection Type (определяется каталогом config/providers.yaml). Кнопка
+#    "Fetch models" живо запрашивает /v1/models у провайдера, если это
+#    поддерживается (openai_compatible).
+#  - НОВАЯ ВКЛАДКА CHAT: больше не имеет своих дропдаунов Mode/Provider/Model
+#    (они убраны как источник истины). Чат показывает активное подключение
+#    (readonly: имя + модель) + кнопку "Edit", открывающую то же модальное
+#    окно, что и на вкладке LLM Settings. Источник истины теперь один — реестр.
+#  - chat_fn() / build_llm_client() переписаны: читают активное подключение
+#    из llm_connections.json -> build_llm_client_from_connection(). При
+#    пустом реестре fallback на старый get_llm_client() из плоских .env-переменных.
+#  - Шифрование секретов: LLM-ключи в llm_connections.json шифруются Fernet
+#    по CONNECTIONS_ENCRYPTION_KEY (общий модуль crypto.py).
+#  - gr.Modal объявлен ВНЕ gr.Tabs() — обход известного бага Gradio, когда
+#    модал visible=False под TabItem "показывается" при повторном входе на
+#    вкладку.
+#  - Убран хардкод ["openai","anthropic","google"] в обработчиках чата
+#    (стр.593-594 в v1.3.0) — список провайдеров берётся из providers.yaml.
+#  - Лимит итераций tool-calling цикла вынесен в .env CHAT_MAX_TOOL_ITERATIONS
+#    (было захардкожено range(5)).
+# Изменения в 1.4.0 (только заголовок, код не менялся — см. выше):
+# Изменения в 1.3.0:
+#  - ИСПРАВЛЕНО "зависание" при переключении Mode (Remote/Local) на
+#    вкладке Chat: обработчики использовали queue=False.
+# Изменения в 1.2.0:
+#  - ИСПРАВЛЕН функциональный баг: chat_fn() теперь передаёт temperature
+#    и max_tokens (читаются из .env LLM_TEMPERATURE/LLM_MAX_TOKENS на
+#    каждый вызов) в LLMClient.chat().
+# Изменения в 1.1.0:
+#  - Добавлен import yaml, загрузка config/ui_settings.yaml и
+#    config/prompts.yaml при старте (с безопасными fallback-значениями).
+# =========================================================================
+#!/usr/bin/env python3
+import os
+
+# Ensure localhost requests bypass system proxy (fixes Gradio API 502 on
+# Windows systems with a system proxy like Clash/V2Ray on 127.0.0.1).
+_no_proxy = os.environ.get("NO_PROXY", "")
+if "127.0.0.1" not in _no_proxy:
+    os.environ["NO_PROXY"] = (_no_proxy + ",127.0.0.1,localhost").lstrip(",")
+    os.environ["no_proxy"] = os.environ["NO_PROXY"]
+
+import json
+import logging
+
+import gradio as gr
+import yaml
+from dotenv import load_dotenv
+
+from .pg_client import PostgresClient
+from .llm_client import get_llm_client, build_llm_client_from_connection, LLMClient, LLMResponse
+from .connection_store import (
+    load_connections, build_choices, parse_display, find_by_key, find_by_value,
+    find_by_id, find_by_key_and_masked_value,
+    match_existing, match_by_server, add_connection,
+    update_connection, delete_connection, toggle_pin, bump_usage, update_key,
+    set_default, get_default, is_key_taken,
+    _make_key_from_url, _parse_url_parts, _mask_password,
+)
+from . import llm_connection_store as llm_conn_store
+from .crypto import is_encryption_enabled
+
+# Compute ENV_PATH before load_dotenv so it finds .env regardless of CWD
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+ENV_PATH = os.path.join(_PROJECT_ROOT, '.env')
+CONFIG_DIR = os.path.join(_PROJECT_ROOT, 'config')
+UI_SETTINGS_PATH = os.path.join(CONFIG_DIR, 'ui_settings.yaml')
+PROMPTS_PATH = os.path.join(CONFIG_DIR, 'prompts.yaml')
+PROVIDERS_PATH = os.path.join(CONFIG_DIR, 'providers.yaml')
+
+load_dotenv(ENV_PATH)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("pg_mcp")
+
+APP_TITLE = os.getenv("APP_TITLE", "PostgreSQL MCP Autonomous")
+APP_HOST = os.getenv("APP_HOST", "127.0.0.1")
+APP_PORT = int(os.getenv("APP_PORT", "7862"))
+THEME = os.getenv("THEME", "default")
+SHOW_VAL = os.getenv("SHOW_VALUE", "false").lower() == "true"
+
+# --- Операционные лимиты (см. .env для описаний) ---
+CHAT_MAX_TOOL_ITERATIONS = int(os.getenv("CHAT_MAX_TOOL_ITERATIONS", "5"))
+CHAT_TOOL_RESULT_TRUNCATE = int(os.getenv("CHAT_TOOL_RESULT_TRUNCATE", "1000"))
+SQL_MAX_ROWS_DISPLAY = int(os.getenv("SQL_MAX_ROWS_DISPLAY", "100"))
+LLM_TEMP_MIN = float(os.getenv("LLM_TEMP_MIN", "0"))
+LLM_TEMP_MAX = float(os.getenv("LLM_TEMP_MAX", "2"))
+LLM_TEMP_STEP = float(os.getenv("LLM_TEMP_STEP", "0.05"))
+LLM_MAXTOKENS_MIN = int(os.getenv("LLM_MAXTOKENS_MIN", "1"))
+LLM_MAXTOKENS_MAX = int(os.getenv("LLM_MAXTOKENS_MAX", "100000"))
+LLM_FETCH_MODELS_TIMEOUT = float(os.getenv("LLM_FETCH_MODELS_TIMEOUT", "10"))
+
+BLOCKS_CSS = """
+    .saved-dd .wrap-inner { flex-wrap: nowrap !important; }
+    .saved-dd .secondary-wrap { min-width: 0 !important; }
+    .saved-dd input {
+      padding-right: 28px !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      min-width: 0 !important;
+      cursor: pointer !important;
+    }
+    .saved-dd .icon-wrap {
+      flex-shrink: 0 !important;
+      pointer-events: none !important;
+    }
+    #llm-modal {
+      border: 1px solid var(--border-color-primary, #e0e0e0);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 8px 0;
+      background: var(--background-fill-secondary, #f9f9f9);
+    }
+"""
+
+
+# --- Fallback-значения на случай отсутствия/повреждения yaml-файлов ---
+_UI_SETTINGS_FALLBACK = {
+    "connection_tab": {
+        "saved_connections": {"label": "Saved Connections", "readonly": False},
+        "database": {"label": "Database", "readonly": True},
+    },
+    "chat_tab": {
+        "mode": {"label": "Mode", "choices": ["remote", "local"]},
+        "provider": {"label": "Provider", "readonly": True, "choices": ["openai", "anthropic", "google", "local"]},
+        "model": {
+            "label": "Model", "readonly": False,
+            "models_by_provider": {
+                "openai": ["gpt-4o-mini", "gpt-4o", "gpt-4o-turbo", "gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", "o1-mini", "o1-preview", "o3-mini"],
+                "anthropic": ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest", "claude-3-haiku-latest", "claude-2", "claude-instant-1.2"],
+                "google": ["gemini-2.0-flash", "gemini-2.0-pro-exp", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.5-pro-001"],
+                "local": ["local-model"],
+            },
+        },
+    },
+    "llm_settings_tab": {
+        "provider": {"label": "Provider", "readonly": True, "choices": ["openai", "anthropic", "google"]},
+    },
+}
+
+_PROMPTS_FALLBACK = {
+    "system_prompt": """You are a PostgreSQL database assistant. Help users explore databases, write SQL, and analyze performance.
+
+Tools:
+- execute_sql(sql) — run any SQL query
+- get_schema() — get full database schema
+- explain_query(sql) — get execution plan
+- get_health_report() — database health overview
+
+Rules:
+1. Explain SQL before executing
+2. Use SELECT for exploration, never DELETE/DROP without explicit request
+3. Show schema context when relevant
+4. Format results as readable tables"""
+}
+
+# Минимальный fallback-каталог провайдеров (на случай отсутствия/повреждения
+# providers.yaml). Структура та же, что и в config/providers.yaml.
+_PROVIDERS_FALLBACK = {
+    "connection_types": {
+        "openai_compatible": {
+            "label": "OpenAI-compatible (chat/completions)",
+            "llm_method": "openai",
+            "params": {
+                "api_key": {"label": "API Key", "required": False, "secret": True, "placeholder": "sk-..."},
+                "base_url": {"label": "Base URL", "required": True, "secret": False, "placeholder": "https://api.openai.com/v1"},
+            },
+            "models_endpoint": "/models",
+            "models_endpoint_format": "openai",
+        },
+        "anthropic_native": {
+            "label": "Anthropic native (messages)",
+            "llm_method": "anthropic",
+            "params": {
+                "api_key": {"label": "API Key", "required": True, "secret": True, "placeholder": "sk-ant-..."},
+                "base_url": {"label": "Base URL", "required": False, "secret": False, "default": "https://api.anthropic.com/v1", "placeholder": "https://api.anthropic.com/v1"},
+                "anthropic_version": {"label": "anthropic-version", "required": True, "secret": False, "default": "2023-06-01", "placeholder": "2023-06-01"},
+            },
+            "models_endpoint": None,
+        },
+        "google_native": {
+            "label": "Google AI (generateContent)",
+            "llm_method": "google",
+            "params": {
+                "api_key": {"label": "API Key", "required": True, "secret": True, "placeholder": "AIza..."},
+                "base_url": {"label": "Base URL", "required": False, "secret": False, "default": "https://generativelanguage.googleapis.com/v1beta", "placeholder": "https://generativelanguage.googleapis.com/v1beta"},
+            },
+            "models_endpoint": None,
+        },
+    },
+    "cloud": {"enabled": True, "providers": {
+        "openai": {"enabled": True, "label": "OpenAI", "connection_types": ["openai_compatible"],
+                   "models": {"openai_compatible": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["openai"]}},
+        "anthropic": {"enabled": True, "label": "Anthropic", "connection_types": ["anthropic_native"],
+                      "models": {"anthropic_native": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["anthropic"]}},
+        "google": {"enabled": True, "label": "Google", "connection_types": ["google_native"],
+                   "models": {"google_native": _UI_SETTINGS_FALLBACK["chat_tab"]["model"]["models_by_provider"]["google"]}},
+    }},
+    "local": {"enabled": True, "providers": {
+        "lmstudio": {"enabled": True, "label": "LM Studio", "connection_types": ["openai_compatible"], "models": {"openai_compatible": []}},
+    }},
+}
+
+
+def _load_yaml(path: str, fallback: dict) -> dict:
+    if not os.path.exists(path):
+        logger.warning(f"Config file not found: {path}. Using built-in fallback.")
+        return fallback
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+        return data if data else fallback
+    except Exception as e:
+        logger.warning(f"Failed to load {path}: {e}. Using built-in fallback.")
+        return fallback
+
+
+UI_SETTINGS = _load_yaml(UI_SETTINGS_PATH, _UI_SETTINGS_FALLBACK)
+PROMPTS = _load_yaml(PROMPTS_PATH, _PROMPTS_FALLBACK)
+PROVIDERS = _load_yaml(PROVIDERS_PATH, _PROVIDERS_FALLBACK)
+
+# Карта секретных полей по connection_type — для шифрования при save/load реестра.
+SECRET_FIELDS_MAP = llm_conn_store.build_secret_fields_map(PROVIDERS)
+
+
+def _dd_cfg(section: str, key: str) -> dict:
+    return UI_SETTINGS.get(section, {}).get(key, {})
+
+
+def get_system_prompt() -> str:
+    env_override = os.getenv("LLM_SYSTEM_PROMPT", "").strip()
+    if env_override:
+        return env_override
+    return PROMPTS.get("system_prompt", _PROMPTS_FALLBACK["system_prompt"])
+
+
+# ----------------------------------------------------------------------------
+# Catalog helpers: навигация по providers.yaml (mode -> provider -> conn_type -> models)
+# ----------------------------------------------------------------------------
+
+def _section_enabled(section: str) -> bool:
+    """Видимость секции cloud/local с учётом .env-переопределений.
+    Пустое значение в .env = использовать enabled из YAML."""
+    env_flag = os.getenv(f"LLM_{section.upper()}_ENABLED", "").strip().lower()
+    if env_flag in ("true", "false"):
+        return env_flag == "true"
+    return bool(PROVIDERS.get(section, {}).get("enabled", True))
+
+
+def _providers_in_section(section: str) -> list[tuple[str, dict]]:
+    """Список (provider_id, provider_cfg) с enabled=true в секции."""
+    if not _section_enabled(section):
+        return []
+    providers = PROVIDERS.get(section, {}).get("providers", {})
+    return [(pid, pcfg) for pid, pcfg in providers.items() if pcfg.get("enabled", True)]
+
+
+def _mode_choices() -> list[str]:
+    """Доступные режимы (cloud/local) для дропдауна Mode."""
+    modes = []
+    if _section_enabled("cloud"):
+        modes.append("cloud")
+    if _section_enabled("local"):
+        modes.append("local")
+    return modes or ["cloud"]
+
+
+def _provider_choices(mode: str) -> list[tuple[str, str]]:
+    """Список (provider_id, label) для выбранного mode."""
+    return [(pid, pcfg.get("label", pid)) for pid, pcfg in _providers_in_section(mode)]
+
+
+def _conn_type_choices(provider_id: str, mode: str) -> list[tuple[str, str]]:
+    """Список (conn_type_id, label) для выбранного провайдера."""
+    providers = PROVIDERS.get(mode, {}).get("providers", {})
+    pcfg = providers.get(provider_id, {})
+    ct_catalog = PROVIDERS.get("connection_types", {})
+    result = []
+    for ct_id in pcfg.get("connection_types", []):
+        ct_cfg = ct_catalog.get(ct_id, {})
+        result.append((ct_id, ct_cfg.get("label", ct_id)))
+    return result
+
+
+def _model_choices(provider_id: str, mode: str, conn_type: str) -> list[str]:
+    """Список моделей для (provider, conn_type) из каталога (без live-fetch)."""
+    providers = PROVIDERS.get(mode, {}).get("providers", {})
+    pcfg = providers.get(provider_id, {})
+    models = pcfg.get("models", {}).get(conn_type, [])
+    return list(models) if models else []
+
+
+def _conn_type_cfg(conn_type: str) -> dict:
+    return PROVIDERS.get("connection_types", {}).get(conn_type, {})
+
+
+def _param_fields_for_ct(conn_type: str) -> list[str]:
+    """Упорядоченный список имён параметров для connection_type."""
+    params = _conn_type_cfg(conn_type).get("params", {})
+    return list(params.keys())
+
+
+def _param_meta(conn_type: str, field: str) -> dict:
+    return _conn_type_cfg(conn_type).get("params", {}).get(field, {})
+
+
+def _param_default(conn_type: str, field: str, provider_id: str = "", mode: str = "") -> str:
+    """Дефолтное значение параметра: сначала params_override провайдера, потом default connection_type."""
+    # params_override на уровне провайдера
+    if provider_id and mode:
+        providers = PROVIDERS.get(mode, {}).get("providers", {})
+        override = providers.get(provider_id, {}).get("params_override", {}).get(conn_type, {}).get(field, {})
+        if "default" in override:
+            return override["default"]
+    return _param_meta(conn_type, field).get("default", "")
+
+
+def _models_endpoint(conn_type: str) -> str | None:
+    return _conn_type_cfg(conn_type).get("models_endpoint")
+
+
+def _format_active_connection(conn: dict | None) -> str:
+    """Строка для readonly-показа активного подключения в Chat/LLM Settings."""
+    if not conn:
+        env_fallback = os.getenv("LLM_PROVIDER", "")
+        env_model = os.getenv("LLM_MODEL", "")
+        if env_fallback or env_model:
+            return f"_Активное: **{env_fallback}** / {env_model} (из .env fallback — реестр пуст)_"
+        return "_Нет активного LLM-подключения. Создайте его на вкладке LLM Settings._"
+    name = conn.get("name", "?")
+    model = conn.get("model", "?")
+    mode = conn.get("mode", "?")
+    provider_label = PROVIDERS.get(mode, {}).get("providers", {}).get(conn.get("provider", ""), {}).get("label", conn.get("provider", "?"))
+    ct_label = _conn_type_cfg(conn.get("connection_type", "")).get("label", conn.get("connection_type", "?"))
+    return f"Активное: **{name}** — {provider_label} ({ct_label}) / модель: `{model}`"
+
+
+def _llm_conn_choices() -> list[str]:
+    """Список имён подключений для дропдауна реестра (активное первым)."""
+    conns = llm_conn_store.load_llm_connections(secret_fields_map=SECRET_FIELDS_MAP)
+    if not conns:
+        return []
+    # активное первым
+    active = llm_conn_store.get_active_llm_connection(secret_fields_map=SECRET_FIELDS_MAP)
+    active_name = active.get("name", "") if active else ""
+    names = [c.get("name", "?") for c in conns]
+    if active_name and active_name in names:
+        names.remove(active_name)
+        names.insert(0, active_name)
+    return names
+
+
+def save_env_file(updates: dict[str, str]) -> None:
+    lines = []
+    if os.path.exists(ENV_PATH):
+        with open(ENV_PATH, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    updated = set()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if '=' in stripped and not stripped.startswith('#'):
+            key = stripped.split('=', 1)[0].strip()
+            if key in updates:
+                lines[i] = f"{key}={updates[key]}\n"
+                updated.add(key)
+    for key, val in updates.items():
+        if key not in updated:
+            lines.append(f"{key}={val}\n")
+    with open(ENV_PATH, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+    load_dotenv(override=True)
+
+
+pg = PostgresClient()
+
+POSTGRES_TOOLS = [
+    {"name": "execute_sql", "description": "Execute a SQL query", "parameters": {"type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"]}},
+    {"name": "get_schema", "description": "Get full database schema", "parameters": {"type": "object", "properties": {}}},
+    {"name": "explain_query", "description": "Get execution plan", "parameters": {"type": "object", "properties": {"sql": {"type": "string"}}, "required": ["sql"]}},
+    {"name": "get_health_report", "description": "Database health overview", "parameters": {"type": "object", "properties": {}}},
+]
+
+
+async def handle_tool(name: str, args: dict) -> str:
+    if name == "execute_sql":
+        r = await pg.execute_sql(args.get("sql", ""))
+        if r.error: return f"Error: {r.error}"
+        if not r.columns: return f"OK. {r.row_count} rows affected"
+        return json.dumps([dict(zip(r.columns, row)) for row in r.rows], indent=2, default=str)
+    if name == "get_schema": return await pg.get_schema_text()
+    if name == "explain_query": return await pg.explain_query(args.get("sql", ""))
+    if name == "get_health_report": return await pg.get_health_report()
+    return f"Unknown tool: {name}"
+
+
+def build_llm_client() -> "LLMClient":
+    """Собирает LLMClient из АКТИВНОГО подключения реестра.
+    При пустом реестре — fallback на старый get_llm_client() из плоских .env."""
+    conn = llm_conn_store.get_active_llm_connection(secret_fields_map=SECRET_FIELDS_MAP)
+    if conn:
+        return build_llm_client_from_connection(conn, PROVIDERS)
+    logger.info("LLM registry empty — using .env fallback (get_llm_client).")
+    return get_llm_client()
+
+
+async def chat_fn(message: str, history: list) -> tuple[str, list]:
+    if not pg.is_connected:
+        return "", history + [{"role": "assistant", "content": "Not connected to any database. Please connect first."}]
+    llm = build_llm_client()
+    # Читаем temperature/max_tokens из .env на каждый вызов (не константой
+    # на уровне модуля), чтобы значения, сохранённые кнопкой "Save All to
+    # .env" на вкладке LLM Settings, применялись сразу — без перезапуска.
+    chat_temperature = float(os.getenv("LLM_TEMPERATURE", "0.3"))
+    chat_max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2000"))
+    msgs = [{"role": h["role"], "content": h["content"]} for h in history]
+    msgs.append({"role": "user", "content": message})
+    history = history + [{"role": "user", "content": message}]
+    full = ""
+    for _ in range(CHAT_MAX_TOOL_ITERATIONS):
+        resp: LLMResponse = await llm.chat(
+            msgs, get_system_prompt(), POSTGRES_TOOLS,
+            temperature=chat_temperature, max_tokens=chat_max_tokens,
+        )
+        if not resp.tool_calls:
+            safe = (full + (resp.content or "")).replace("![", "[")
+            new_history = history + [{"role": "assistant", "content": safe}]
+            return "", new_history
+        msgs.append({"role": "assistant", "content": resp.content or "", "tool_calls": [{"id": t["id"], "name": t["name"], "arguments": t["arguments"]} for t in resp.tool_calls]})
+        for tc in resp.tool_calls:
+            text = await handle_tool(tc["name"], tc["arguments"])
+            msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": text})
+            if resp.content: full += resp.content + "\n"
+            full += f"\U0001f527 Used: `{tc['name']}`\n```\n{text[:CHAT_TOOL_RESULT_TRUNCATE]}\n```\n"
+    return "", history + [{"role": "assistant", "content": full + "\n\n_Max iterations reached._"}]
+
+
+# --- Connection tab handlers (без изменений относительно v1.2.0) ---
+
+def _rebuild_saved_dd(conns: list[dict] = None, show_value: bool = False, value: str = None) -> dict:
+    if conns is None:
+        conns = load_connections()
+    kwargs = dict(choices=build_choices(conns, show_value=show_value))
+    if value is not None:
+        kwargs["value"] = value
+    return gr.update(**kwargs)
+
+
+def _build_label(conn: dict, show_val: bool) -> str:
+    label = conn.get("key", "")
+    if conn.get("pinned"):
+        label = "\U0001f4cc " + label
+    if show_val and conn.get("value"):
+        label = f"{label} # {_mask_password(conn['value'])}"
+    return label
+
+
+def _conn_btns(connected: bool) -> tuple[dict, dict, dict]:
+    if connected:
+        return (
+            gr.update(value="\U0001f504 ReConnect", variant="primary"),
+            gr.update(value="\U0001f504 ReDiscover Databases", variant="secondary"),
+            gr.update(value="\u2716 Disconnect", variant="stop", visible=True),
+        )
+    return (
+        gr.update(value="Connect", variant="primary"),
+        gr.update(value="\U0001f50d Discover Databases", variant="secondary"),
+        gr.update(value="\u2716 Disconnect", variant="stop", visible=False),
+    )
+
+
+async def handle_discover(url: str) -> tuple[str, dict]:
+    if not url.strip():
+        return "Enter a URL to discover", gr.update(choices=[])
+    parts = _parse_url_parts(url)
+    sys_url = f"postgresql://{parts['user']}:{parts['password']}@{parts['host']}:{parts['port']}/postgres"
+    dbs = await pg.get_databases(sys_url)
+    if not dbs or dbs[0].get("error"):
+        dbs = await pg.get_databases(url.strip())
+    if not dbs or dbs[0].get("error"):
+        return (f"\u274c {dbs[0]['error']}" if dbs else "No databases"), gr.update(choices=[])
+    db_names = [d["name"] for d in dbs]
+    return f"\U0001f4e6 Found {len(dbs)} databases:\n" + "\n".join(f"  \u2022 `{d['name']}`" for d in dbs), gr.update(choices=db_names)
+
+
+def handle_db_select(db_name: str, current_url: str) -> str:
+    if not db_name:
+        return current_url
+    idx = current_url.rfind("/")
+    if idx > 8:
+        return current_url[: idx + 1] + db_name
+    return current_url
+
+
+async def handle_connect(url: str, selected_db: str) -> tuple[str, dict, dict, dict]:
+    if not url.strip():
+        return "Enter a URL", *_conn_btns(pg.is_connected)
+    target = url.strip()
+    idx = target.rfind("/")
+    if idx <= 8 and selected_db:
+        target = f"{target.rstrip('/')}/{selected_db}"
+    if pg.is_connected:
+        await pg.disconnect()
+    err = await pg.connect(target)
+    if err:
+        return f"\u274c {err}", *_conn_btns(False)
+    r = await pg.execute_sql("SELECT version()")
+    text = f"\u2705 Connected\n{r.rows[0][0] if r.rows else ''}" if not r.error else f"\u274c {r.error}"
+    return text, *_conn_btns(True)
+
+
+async def handle_disconnect() -> tuple[str, dict, dict, dict]:
+    await pg.disconnect()
+    return "Disconnected", *_conn_btns(False)
+
+
+def handle_conn_select(display: str, current_url: str) -> tuple[str, str]:
+    if not display:
+        return current_url, _make_key_from_url(current_url)
+    key, _ = parse_display(display, show_value=True)
+    conn = find_by_key(key)
+    if conn:
+        return conn["value"], conn.get("key", conn["value"])
+    return current_url, _make_key_from_url(current_url)
+
+
+def handle_save_url(url: str, key: str) -> tuple[dict, str]:
+    if not url.strip():
+        return gr.update(), "Enter a URL to save"
+    key = key.strip() or _make_key_from_url(url)
+    conns = load_connections()
+    if is_key_taken(key, conns=conns):
+        existing = find_by_key(key)
+        if existing and existing.get("value") != url:
+            return gr.update(), f"\u26a0\ufe0f Name '{key}' already used. Choose a different name."
+    if match_existing(url, conns):
+        conns = bump_usage(match_existing(url, conns)["id"], conns)
+        return _rebuild_saved_dd(conns), "\u2705 Usage updated"
+    if match_by_server(url, conns):
+        conns = add_connection(url, key, conns)
+        return _rebuild_saved_dd(conns), "\u2705 Saved as new (different database)"
+    conns = add_connection(url, key, conns)
+    return _rebuild_saved_dd(conns), "\u2705 Connection saved"
+
+
+def _find_from_dd(display: str, show_val: bool):
+    if not display:
+        return None
+    key, val = parse_display(display, show_value=show_val)
+    if show_val and val:
+        return find_by_key_and_masked_value(key, val)
+    return find_by_key(key) or (find_by_value(val) if val else None)
+
+
+def handle_pin_toggle(display: str, show_val: bool) -> dict:
+    conn = _find_from_dd(display, show_val)
+    if conn:
+        conns = toggle_pin(conn["id"])
+        updated = next((c for c in conns if c["id"] == conn["id"]), conn)
+        return _rebuild_saved_dd(conns, show_value=show_val, value=_build_label(updated, show_val))
+    return gr.update()
+
+
+def handle_rename(display: str, new_key: str, show_val: bool) -> tuple[dict, str]:
+    if not display or not new_key:
+        return gr.update(), ""
+    conn = _find_from_dd(display, show_val)
+    if not conn:
+        return gr.update(), ""
+    if is_key_taken(new_key, exclude_id=conn["id"]):
+        return gr.update(), f"\u26a0\ufe0f Name '{new_key}' already used. Choose a different name."
+    conns = update_key(conn["id"], new_key)
+    conn["key"] = new_key
+    return gr.update(choices=build_choices(conns, show_value=show_val), value=_build_label(conn, show_val)), f"\u2705 Renamed to '{new_key}'"
+
+
+def handle_delete(display: str, show_val: bool) -> tuple[dict, str, str, str]:
+    conn = _find_from_dd(display, show_val)
+    if not conn:
+        return gr.update(), "", "", ""
+    conns = delete_connection(conn["id"])
+    conns = load_connections()
+    default = get_default(conns)
+    if default:
+        label = _build_label(default, show_val)
+        return _rebuild_saved_dd(conns, show_value=show_val, value=label), default["value"], default["key"], f"Deleted, default: {default['key']}"
+    if conns:
+        first = conns[0]
+        label = _build_label(first, show_val)
+        return _rebuild_saved_dd(conns, show_value=show_val, value=label), first["value"], first["key"], f"Deleted, selected: {first['key']}"
+    return _rebuild_saved_dd(conns, show_value=show_val), "", "", "Deleted. No connections left."
+
+
+def handle_show_value_toggle(show: bool, current_dd_val: str) -> dict:
+    conns = load_connections()
+    choices = build_choices(conns, show_value=show)
+    if current_dd_val:
+        key, val = parse_display(current_dd_val, show_value=True)
+        if not key:
+            key = current_dd_val
+        conn = find_by_key(key) or (find_by_value(val) if val else None)
+        if conn:
+            new_val = key if not show else f"{key} # {_mask_password(conn['value'])}"
+            if conn.get("pinned"):
+                new_val = "\U0001f4cc " + new_val
+            return gr.update(choices=choices, value=new_val)
+    return gr.update(choices=choices)
+
+
+def handle_set_default(display: str, show_val: bool) -> tuple[dict, str]:
+    conn = _find_from_dd(display, show_val)
+    if not conn:
+        return gr.update(), "Select a connection first"
+    conns = set_default(conn["id"])
+    save_env_file({"DEFAULT_CONNECTION_KEY": conn["key"]})
+    return _rebuild_saved_dd(conns, show_value=show_val, value=_build_label(conn, show_val)), f"\u2b50 Default set: {conn['key']}"
+
+
+async def run_sql(sql: str) -> str:
+    if not pg.is_connected: return "Not connected"
+    if not sql.strip(): return "Enter a query"
+    r = await pg.execute_sql(sql.strip())
+    if r.error: return f"\u274c {r.error}"
+    if r.columns:
+        header = " | ".join(r.columns)
+        sep = "-" * len(header)
+        rows = "\n".join(" | ".join(str(c) if c is not None else "NULL" for c in row) for row in r.rows[:SQL_MAX_ROWS_DISPLAY])
+        extra = f"\n... +{len(r.rows)-SQL_MAX_ROWS_DISPLAY} rows" if len(r.rows) > SQL_MAX_ROWS_DISPLAY else ""
+        return f"\u2705 {r.row_count} rows in {r.duration_ms:.0f}ms\n\n{header}\n{sep}\n{rows}{extra}"
+    return f"\u2705 OK. {r.row_count} affected in {r.duration_ms:.0f}ms"
+
+
+async def get_schema_display() -> str:
+    if not pg.is_connected: return "Not connected"
+    t = await pg.get_schema_text()
+    return f"```\n{t}\n```" if t else "No tables"
+
+
+async def get_health_display() -> str:
+    if not pg.is_connected: return "Not connected"
+    return await pg.get_health_report()
+
+
+async def get_top_queries_display() -> str:
+    if not pg.is_connected: return "Not connected"
+    return await pg.get_top_queries()
+
+
+async def run_sql_explain(sql: str) -> str:
+    if not pg.is_connected: return "Not connected"
+    return await pg.explain_query(sql)
+
+
+# ----------------------------------------------------------------------------
+# LLM connection registry handlers (новое в v1.5.0)
+# ----------------------------------------------------------------------------
+
+def _active_display() -> str:
+    conn = llm_conn_store.get_active_llm_connection(secret_fields_map=SECRET_FIELDS_MAP)
+    return _format_active_connection(conn)
+
+
+def llm_set_active(name: str) -> tuple[dict, str, str]:
+    """Делает подключение активным по имени. Обновляет дропдаун реестра
+    (активное первым) и оба readonly-показа (Chat + LLM Settings)."""
+    if not name:
+        return gr.update(), _active_display(), _active_display()
+    conns = llm_conn_store.load_llm_connections(secret_fields_map=SECRET_FIELDS_MAP)
+    target = next((c for c in conns if c.get("name") == name), None)
+    if not target:
+        return gr.update(), _active_display(), _active_display()
+    llm_conn_store.set_active_llm_connection(target["id"], secret_fields_map=SECRET_FIELDS_MAP)
+    save_env_file({"ACTIVE_LLM_CONNECTION": name})
+    return gr.update(choices=_llm_conn_choices(), value=name), _active_display(), _active_display()
+
+
+def llm_delete_connection(name: str) -> tuple[dict, str, str, str]:
+    """Удаляет подключение по имени. Если удалили активное — активным
+    становится первое оставшееся (логика в store)."""
+    if not name:
+        return gr.update(), _active_display(), _active_display(), "Select a connection to delete"
+    conns = llm_conn_store.load_llm_connections(secret_fields_map=SECRET_FIELDS_MAP)
+    target = next((c for c in conns if c.get("name") == name), None)
+    if not target:
+        return gr.update(), _active_display(), _active_display(), f"Connection '{name}' not found"
+    llm_conn_store.delete_llm_connection(target["id"], secret_fields_map=SECRET_FIELDS_MAP)
+    new_choices = _llm_conn_choices()
+    new_active = _active_display()
+    return gr.update(choices=new_choices, value=new_choices[0] if new_choices else None), new_active, new_active, f"\u2705 Deleted '{name}'"
+
+
+def open_modal_new() -> tuple[dict, str, str, str, str, str, str, str, str, str, str, str, str, str]:
+    """Открывает модал для НОВОГО подключения. Сбрасывает селекторы на дефолты."""
+    modes = _mode_choices()
+    first_mode = modes[0]
+    providers = _provider_choices(first_mode)
+    first_provider = providers[0][0] if providers else ""
+    conn_types = _conn_type_choices(first_provider, first_mode)
+    first_ct = conn_types[0][0] if conn_types else ""
+    models = _model_choices(first_provider, first_mode, first_ct)
+    return _open_modal_with(
+        mode=first_mode, provider=first_provider, conn_type=first_ct, model=models[0] if models else "",
+        name="", conn_id="",
+    )
+
+
+def open_modal_edit(name: str) -> tuple:
+    """Открывает модал для РЕДАКТИРОВАНИЯ существующего подключения по имени."""
+    if not name:
+        return open_modal_new()
+    conns = llm_conn_store.load_llm_connections(secret_fields_map=SECRET_FIELDS_MAP)
+    conn = next((c for c in conns if c.get("name") == name), None)
+    if not conn:
+        return open_modal_new()
+    return _open_modal_with(
+        mode=conn.get("mode", "cloud"),
+        provider=conn.get("provider", ""),
+        conn_type=conn.get("connection_type", ""),
+        model=conn.get("model", ""),
+        name=conn.get("name", ""),
+        conn_id=conn.get("id", ""),
+        params=conn.get("params", {}),
+    )
+
+
+def open_modal_edit_active() -> tuple:
+    """Открывает модал на редактирование АКТИВНОГО подключения.
+    Не принимает input — сама читает активное из реестра. Если реестр
+    пуст — открывает форму для нового (создания). Используется кнопкой
+    Edit на вкладке Chat (где нет дропдауна выбора подключения)."""
+    active = llm_conn_store.get_active_llm_connection(secret_fields_map=SECRET_FIELDS_MAP)
+    if not active:
+        return open_modal_new()
+    return open_modal_edit(active.get("name", ""))
+
+
+def _open_modal_with(mode, provider, conn_type, model, name, conn_id="", params=None) -> tuple:
+    """Общий помощник: открывает модал и выставляет все поля селекторов +
+    видимость динамических параметров под выбранный conn_type."""
+    params = params or {}
+    # Видимость параметров
+    fields = _param_fields_for_ct(conn_type)
+    vis = {f: (f in fields) for f in ("api_key", "base_url", "folder_id", "anthropic_version")}
+    # Значения параметров (дефолт + переданное)
+    def _val(field):
+        if field in params and params[field]:
+            return params[field]
+        return _param_default(conn_type, field, provider, mode)
+
+    return (
+        gr.update(visible=True),                      # modal
+        gr.update(choices=_mode_choices(), value=mode),
+        gr.update(choices=[pid for pid, _ in _provider_choices(mode)], value=provider),
+        gr.update(choices=[ct for ct, _ in _conn_type_choices(provider, mode)], value=conn_type),
+        gr.update(choices=_model_choices(provider, mode, conn_type), value=model),
+        gr.update(value=name),
+        gr.update(value=_val("api_key"), visible=vis["api_key"]),
+        gr.update(value=_val("base_url"), visible=vis["base_url"]),
+        gr.update(value=_val("folder_id"), visible=vis["folder_id"]),
+        gr.update(value=_val("anthropic_version"), visible=vis["anthropic_version"]),
+        gr.update(value=conn_id),                     # скрытое поле id
+        gr.update(visible=_models_endpoint(conn_type) is not None),  # fetch_btn
+        gr.update(),  # fetch_status
+        gr.update(),  # llm_status (общий)
+    )
+
+
+def close_modal() -> dict:
+    return gr.update(visible=False)
+
+
+def on_mode_change(mode: str) -> tuple[dict, dict, dict, dict, dict, dict, dict, dict, dict]:
+    """При смене Mode: обновить провайдеров, сбросить conn_type/model, видимость полей."""
+    providers = _provider_choices(mode)
+    first_provider = providers[0][0] if providers else ""
+    return _on_provider_or_ct_change(mode, first_provider, "")
+
+
+def on_provider_change(provider: str, mode: str) -> tuple:
+    """При смене Provider: обновить conn_types, сбросить model, видимость полей."""
+    return _on_provider_or_ct_change(mode, provider, "")
+
+
+def on_conn_type_change(conn_type: str, provider: str, mode: str) -> tuple:
+    """При смене Connection Type: обновить model, пересчитать видимость полей."""
+    return _on_provider_or_ct_change(mode, provider, conn_type)
+
+
+def _on_provider_or_ct_change(mode, provider, conn_type) -> tuple:
+    """Общий пересчёт зависимых селекторов и видимости параметров.
+    Если conn_type пуст — берём первый доступный для провайдера."""
+    if not conn_type:
+        cts = _conn_type_choices(provider, mode)
+        conn_type = cts[0][0] if cts else ""
+    models = _model_choices(provider, mode, conn_type)
+    fields = _param_fields_for_ct(conn_type)
+    vis = {f: (f in fields) for f in ("api_key", "base_url", "folder_id", "anthropic_version")}
+    # Дефолты параметров для нового conn_type
+    def _val(field):
+        return _param_default(conn_type, field, provider, mode)
+    return (
+        gr.update(choices=[ct for ct, _ in _conn_type_choices(provider, mode)], value=conn_type),
+        gr.update(choices=models, value=models[0] if models else ""),
+        gr.update(value=_val("api_key"), visible=vis["api_key"]),
+        gr.update(value=_val("base_url"), visible=vis["base_url"]),
+        gr.update(value=_val("folder_id"), visible=vis["folder_id"]),
+        gr.update(value=_val("anthropic_version"), visible=vis["anthropic_version"]),
+        gr.update(visible=_models_endpoint(conn_type) is not None),
+        gr.update(),  # fetch_status
+    )
+
+
+async def on_fetch_models(provider: str, mode: str, conn_type: str, api_key: str, base_url: str, folder_id: str) -> tuple[dict, str]:
+    """Живой запрос списка моделей через LLMClient.fetch_models().
+    Обновляет choices model_dd и пишет статус. Не падает при ошибке."""
+    if not conn_type or not _models_endpoint(conn_type):
+        return gr.update(), "Fetch not supported for this connection type"
+    # Собираем временный клиент только для fetch_models
+    params = {"api_key": api_key or "", "base_url": base_url or ""}
+    if folder_id:
+        params["folder_id"] = folder_id
+    tmp = LLMClient(
+        llm_method=_conn_type_cfg(conn_type).get("llm_method", "openai"),
+        model="", params=params,
+        models_endpoint=_models_endpoint(conn_type),
+        models_endpoint_format=_conn_type_cfg(conn_type).get("models_endpoint_format", "openai"),
+    )
+    models = await tmp.fetch_models()
+    if not models:
+        return gr.update(), "\u274c No models fetched (check base_url / api_key / server is running)"
+    return gr.update(choices=models, value=models[0]), f"\u2705 Fetched {len(models)} models"
+
+
+def save_connection(
+    mode: str, provider: str, conn_type: str, model: str, name: str,
+    api_key: str, base_url: str, folder_id: str, anthropic_version: str,
+    conn_id: str,
+) -> tuple[dict, str, str, str, str]:
+    """Сохраняет (новое или существующее) подключение в реестр.
+    Делает его активным. Закрывает модал. Обновляет дропдаун реестра + оба readonly-показа."""
+    name = (name or "").strip()
+    if not name:
+        return gr.update(visible=True), "\u26a0\ufe0f Connection name is required", _active_display(), _active_display(), gr.update()
+    if not provider or not conn_type:
+        return gr.update(visible=True), "\u26a0\ufe0f Provider and Connection Type are required", _active_display(), _active_display(), gr.update()
+    # Валидация required-параметров
+    for field in _param_fields_for_ct(conn_type):
+        meta = _param_meta(conn_type, field)
+        if meta.get("required"):
+            val = {"api_key": api_key, "base_url": base_url, "folder_id": folder_id, "anthropic_version": anthropic_version}.get(field, "")
+            if not (val or "").strip():
+                label = meta.get("label", field)
+                return gr.update(visible=True), f"\u26a0\ufe0f Field '{label}' is required", _active_display(), _active_display(), gr.update()
+
+    # Сбор params: только поля текущего conn_type (лишние не пишем)
+    params = {}
+    for field in _param_fields_for_ct(conn_type):
+        val = {"api_key": api_key, "base_url": base_url, "folder_id": folder_id, "anthropic_version": anthropic_version}.get(field, "")
+        if (val or "").strip():
+            params[field] = val.strip()
+
+    conn_record = {
+        "mode": mode,
+        "provider": provider,
+        "connection_type": conn_type,
+        "model": model,
+        "name": name,
+        "params": params,
+    }
+
+    if conn_id:
+        # Редактирование существующего
+        llm_conn_store.update_llm_connection(conn_id, conn_record, secret_fields_map=SECRET_FIELDS_MAP)
+        llm_conn_store.set_active_llm_connection(conn_id, secret_fields_map=SECRET_FIELDS_MAP)
+        save_env_file({"ACTIVE_LLM_CONNECTION": name})
+        msg = f"\u2705 Updated and activated '{name}'"
+    else:
+        # Проверка уникальности имени
+        if llm_conn_store.is_name_taken(name, secret_fields_map=SECRET_FIELDS_MAP):
+            return gr.update(visible=True), f"\u26a0\ufe0f Name '{name}' already used. Choose a different name.", _active_display(), _active_display(), gr.update()
+        llm_conn_store.add_llm_connection(conn_record, make_active=True, secret_fields_map=SECRET_FIELDS_MAP)
+        save_env_file({"ACTIVE_LLM_CONNECTION": name})
+        msg = f"\u2705 Saved and activated '{name}'"
+
+    new_choices = _llm_conn_choices()
+    new_active = _active_display()
+    # Возвращаем: modal(visible=False), llm_status, chat_active_md, llmset_active_md, registry_dd
+    return gr.update(visible=False), msg, new_active, new_active, gr.update(choices=new_choices, value=name)
+
+
+# Auto-save DATABASE_URL on startup if not already saved
+conns = load_connections()
+db_url = os.getenv("DATABASE_URL", "")
+if db_url and not match_existing(db_url, conns) and not match_by_server(db_url, conns):
+    conns = add_connection(db_url, _make_key_from_url(db_url), conns)
+
+# Sync .env DEFAULT_CONNECTION_KEY → connections.json default field
+default_key_from_env = os.getenv("DEFAULT_CONNECTION_KEY", "").strip()
+if default_key_from_env:
+    existing_default = get_default(conns)
+    if not existing_default or existing_default.get("key") != default_key_from_env:
+        target = find_by_key(default_key_from_env)
+        if target:
+            conns = set_default(target["id"])
+            conns = load_connections()
+
+# Determine initial connection from: default > match DATABASE_URL > raw DATABASE_URL
+initial_dd = None
+initial_key = ""
+
+default_conn = get_default(conns)
+if default_conn:
+    initial_key = default_conn["key"]
+    initial_dd = _build_label(default_conn, SHOW_VAL)
+    db_url = default_conn["value"]
+elif db_url:
+    matched = match_existing(db_url, conns) or match_by_server(db_url, conns)
+    if matched:
+        initial_key = matched["key"]
+        db_url = matched["value"]
+        initial_dd = _build_label(matched, SHOW_VAL)
+    else:
+        initial_key = _make_key_from_url(db_url)
+        initial_dd = initial_key
+
+# Логирование статуса шифрования при старте
+llm_conn_store.log_encryption_status()
+
+# Начальный показ активного LLM-подключения
+_INITIAL_ACTIVE_MD = _active_display()
+_INITIAL_LLM_CHOICES = _llm_conn_choices()
+_INITIAL_LLM_DD = _INITIAL_LLM_CHOICES[0] if _INITIAL_LLM_CHOICES else None
+
+
+with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
+    gr.Markdown(f"# {APP_TITLE}")
+    gr.Markdown("Standalone PostgreSQL client with AI chat, SQL editor, schema browser, and MCP server.")
+
+    with gr.Tabs():
+        with gr.TabItem("\U0001f50c Connection"):
+            conns = load_connections()
+            _saved_cfg = _dd_cfg("connection_tab", "saved_connections")
+            _db_cfg = _dd_cfg("connection_tab", "database")
+            with gr.Row():
+                saved_dd = gr.Dropdown(
+                    label=_saved_cfg.get("label", "Saved Connections"),
+                    choices=build_choices(conns, show_value=SHOW_VAL), value=initial_dd,
+                    allow_custom_value=not _saved_cfg.get("readonly", False),
+                    scale=3, elem_classes="saved-dd",
+                )
+                pin_btn = gr.Button("\U0001f4cc Pin", scale=1)
+                default_btn = gr.Button("\u2b50 Default", scale=1)
+                rename_btn = gr.Button("\u270f Rename", scale=1)
+                delete_btn = gr.Button("\U0001f5d1 Delete", scale=1)
+            with gr.Row():
+                label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
+                track_cb = gr.Checkbox(label="\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435", value=os.getenv("TRACK_CHANGES", "false").lower() == "true", scale=1)
+                show_value_cb = gr.Checkbox(label="\u041f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0442\u044c URL", value=os.getenv("SHOW_VALUE", "false").lower() == "true", scale=1)
+            save_btn = gr.Button("\U0001f4be Save This URL")
+            with gr.Row():
+                url_input = gr.Textbox(label="URL", placeholder="postgresql://user:pass@host:5432/db", scale=3, value=db_url)
+                db_selector = gr.Dropdown(
+                    label=_db_cfg.get("label", "Database"),
+                    choices=[], interactive=True, scale=1,
+                    value=None,
+                    allow_custom_value=not _db_cfg.get("readonly", True),
+                    elem_classes="saved-dd",
+                )
+            with gr.Row():
+                discover_btn = gr.Button("\U0001f50d Discover Databases", scale=1)
+                connect_btn = gr.Button("Connect", variant="primary", scale=1)
+            with gr.Row():
+                disconnect_btn = gr.Button("\u2716 Disconnect", variant="stop", scale=1, visible=False)
+            with gr.Row():
+                status_display = gr.Textbox(label="Status / Databases", interactive=False, scale=3)
+
+            saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input], queue=False)
+            save_btn.click(fn=handle_save_url, inputs=[url_input, label_input], outputs=[saved_dd, status_display], queue=False)
+            pin_btn.click(fn=handle_pin_toggle, inputs=[saved_dd, show_value_cb], outputs=saved_dd, queue=False)
+            default_btn.click(fn=handle_set_default, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, status_display], queue=False)
+            rename_btn.click(fn=handle_rename, inputs=[saved_dd, label_input, show_value_cb], outputs=[saved_dd, status_display], queue=False)
+            delete_btn.click(fn=handle_delete, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, url_input, label_input, status_display], queue=False)
+            discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
+            connect_btn.click(fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False)
+            disconnect_btn.click(fn=handle_disconnect, outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False)
+            db_selector.change(fn=handle_db_select, inputs=[db_selector, url_input], outputs=url_input, queue=False)
+            show_value_cb.change(fn=handle_show_value_toggle, inputs=[show_value_cb, saved_dd], outputs=saved_dd, queue=False)
+            show_value_cb.change(fn=lambda v: save_env_file({"SHOW_VALUE": str(v).lower()}) or None, inputs=show_value_cb, outputs=[], queue=False)
+            track_cb.change(fn=lambda v: save_env_file({"TRACK_CHANGES": str(v).lower()}) or None, inputs=track_cb, outputs=[], queue=False)
+
+        with gr.TabItem("\U0001f4ac Chat"):
+            # readonly-показ активного LLM-подключения + кнопка Edit
+            with gr.Row():
+                chat_active_md = gr.Markdown(_INITIAL_ACTIVE_MD)
+                chat_edit_btn = gr.Button("\u270f Edit LLM Connection", scale=1)
+            gr.Markdown("Ask questions about your database in natural language.")
+            chatbot = gr.Chatbot(label="Chat", height=450)
+            msg = gr.Textbox(label="Message", placeholder="e.g. Show me all tables")
+            with gr.Row():
+                gr.Button("Clear").click(fn=lambda: ([], ""), outputs=[chatbot, msg])
+                send_btn = gr.Button("Send", variant="primary")
+            # chat_fn больше не принимает mode/provider/model — берёт активное из реестра
+            send_btn.click(fn=chat_fn, inputs=[msg, chatbot], outputs=[msg, chatbot])
+            msg.submit(fn=chat_fn, inputs=[msg, chatbot], outputs=[msg, chatbot])
+            # Edit открывает тот же модал на АКТИВНОЕ подключение — обработчик
+            # chat_edit_active() не требует input (берёт активное из реестра сам).
+            # Привязка объявлена ниже, после создания модала.
+
+        with gr.TabItem("\U0001f4dd SQL Editor"):
+            with gr.Row():
+                with gr.Column(scale=3):
+                    sql_input = gr.Textbox(label="SQL Query", placeholder="SELECT * FROM ...", lines=6)
+                    sql_result = gr.Textbox(label="Result", interactive=False, lines=15)
+                    with gr.Row():
+                        gr.Button("\u25b6 Run", variant="primary").click(fn=run_sql, inputs=sql_input, outputs=sql_result)
+                        gr.Button("\U0001f52c Explain").click(fn=run_sql_explain, inputs=sql_input, outputs=sql_result)
+                        gr.Button("Clear").click(fn=lambda: ("", ""), outputs=[sql_input, sql_result])
+                with gr.Column(scale=2):
+                    schema_display = gr.Textbox(label="Schema", interactive=False, lines=15)
+                    gr.Button("\U0001f504 Refresh Schema", size="sm").click(fn=get_schema_display, outputs=schema_display)
+
+        with gr.TabItem("\U0001f4ca Schema"):
+            schema_output = gr.Textbox(label="Full Schema", interactive=False, lines=30)
+            gr.Button("\U0001f504 Refresh", variant="primary").click(fn=get_schema_display, outputs=schema_output)
+
+        with gr.TabItem("\U0001f3e5 Health"):
+            with gr.Row():
+                health_output = gr.Textbox(label="Health Report", interactive=False, lines=15)
+                topq_output = gr.Textbox(label="Top Queries", interactive=False, lines=15)
+            with gr.Row():
+                gr.Button("\U0001f3e5 Health Check", variant="primary").click(fn=get_health_display, outputs=health_output)
+                gr.Button("\U0001f422 Top Queries").click(fn=get_top_queries_display, outputs=topq_output)
+
+        with gr.TabItem("\u2699\ufe0f LLM Settings"):
+            gr.Markdown("### \U0001f5c4 LLM Connections Registry")
+            llmset_active_md = gr.Markdown(_INITIAL_ACTIVE_MD)
+            with gr.Row():
+                llm_registry_dd = gr.Dropdown(
+                    label="Connections",
+                    choices=_INITIAL_LLM_CHOICES, value=_INITIAL_LLM_DD,
+                    interactive=True, scale=3, elem_classes="saved-dd",
+                )
+                llm_new_btn = gr.Button("\U0001f195 New", scale=1)
+                llm_edit_btn = gr.Button("\u270f Edit", scale=1)
+                llm_setactive_btn = gr.Button("\u2714 Set Active", variant="primary", scale=1)
+                llm_delete_btn = gr.Button("\U0001f5d1 Delete", variant="stop", scale=1)
+            llm_status = gr.Textbox(label="Status", interactive=False)
+
+            gr.Markdown("### \u2699\ufe0f Generation Parameters")
+            with gr.Row():
+                set_temp = gr.Slider(minimum=LLM_TEMP_MIN, maximum=LLM_TEMP_MAX, step=LLM_TEMP_STEP, value=float(os.getenv("LLM_TEMPERATURE", "0.3")), label="Temperature")
+                set_maxtokens = gr.Number(value=int(os.getenv("LLM_MAX_TOKENS", "2000")), label="Max Tokens", minimum=LLM_MAXTOKENS_MIN, maximum=LLM_MAXTOKENS_MAX, step=1)
+            gr.Markdown("### \U0001f4dd System Prompt")
+            set_sysprompt = gr.Textbox(value=get_system_prompt(), label="", lines=6)
+            with gr.Row():
+                llm_save_btn = gr.Button("\U0001f4be Save Parameters to .env", variant="primary")
+                llm_param_status = gr.Textbox(label="", interactive=False, scale=2)
+            llm_save_btn.click(
+                fn=lambda t, mt, sp: (
+                    save_env_file({"LLM_TEMPERATURE": str(t), "LLM_MAX_TOKENS": str(mt), "LLM_SYSTEM_PROMPT": sp}),
+                    "\u2705 Saved to .env"
+                ),
+                inputs=[set_temp, set_maxtokens, set_sysprompt],
+                outputs=[llm_param_status]
+            )
+
+    # ------------------------------------------------------------------------
+    # Modal: объявлен ВНЕ gr.Tabs() — обход бага показа при повторном входе
+    # на вкладку. Один модал для Chat (Edit) и LLM Settings (New/Edit).
+    # Gradio 6.x не имеет gr.Modal — используем gr.Column с border.
+    # ------------------------------------------------------------------------
+    with gr.Column(visible=False, elem_id="llm-modal") as llm_modal:
+        with gr.Row():
+            modal_mode = gr.Dropdown(label="Mode", choices=_mode_choices(), value=_mode_choices()[0], interactive=True, scale=1)
+            modal_provider = gr.Dropdown(label="Provider", interactive=True, scale=2)
+            modal_conn_type = gr.Dropdown(label="Connection Type", interactive=True, scale=2)
+        modal_model = gr.Dropdown(label="Model", interactive=True, allow_custom_value=True)
+        with gr.Row():
+            modal_fetch_btn = gr.Button("\U0001f50d Fetch models", size="sm")
+            modal_fetch_status = gr.Textbox(label="", interactive=False, scale=2)
+        gr.Markdown("#### Parameters")
+        modal_name = gr.Textbox(label="Connection name", placeholder="My OpenAI / Local Ollama / ...")
+        # Динамические поля параметров — предсозданы, visible переключается
+        modal_apikey = gr.Textbox(label="API Key", type="password", placeholder="sk-...")
+        modal_baseurl = gr.Textbox(label="Base URL", placeholder="https://api.openai.com/v1")
+        modal_folder_id = gr.Textbox(label="Folder ID", placeholder="b1g...", visible=False)
+        modal_anthropic_version = gr.Textbox(label="anthropic-version", placeholder="2023-06-01", visible=False)
+        modal_conn_id = gr.Textbox(visible=False)  # скрытое поле: id редактируемой записи (пусто = новая)
+        with gr.Row():
+            modal_save_btn = gr.Button("\U0001f4be Save", variant="primary")
+            modal_cancel_btn = gr.Button("Cancel")
+
+    # --- Привязки обработчиков модала ---
+    modal_mode.change(
+        fn=on_mode_change, inputs=modal_mode,
+        outputs=[modal_provider, modal_conn_type, modal_model, modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_fetch_btn, modal_fetch_status],
+    )
+    modal_provider.change(
+        fn=on_provider_change, inputs=[modal_provider, modal_mode],
+        outputs=[modal_conn_type, modal_model, modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_fetch_btn, modal_fetch_status],
+    )
+    modal_conn_type.change(
+        fn=on_conn_type_change, inputs=[modal_conn_type, modal_provider, modal_mode],
+        outputs=[modal_model, modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_fetch_btn, modal_fetch_status],
+    )
+    modal_fetch_btn.click(
+        fn=on_fetch_models,
+        inputs=[modal_provider, modal_mode, modal_conn_type, modal_apikey, modal_baseurl, modal_folder_id],
+        outputs=[modal_model, modal_fetch_status],
+    )
+    modal_save_btn.click(
+        fn=save_connection,
+        inputs=[modal_mode, modal_provider, modal_conn_type, modal_model, modal_name,
+                modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_conn_id],
+        outputs=[llm_modal, llm_status, chat_active_md, llmset_active_md, llm_registry_dd],
+    )
+    modal_cancel_btn.click(fn=close_modal, outputs=llm_modal)
+
+    # --- Кнопки реестра на вкладке LLM Settings ---
+    llm_new_btn.click(
+        fn=open_modal_new,
+        outputs=[llm_modal, modal_mode, modal_provider, modal_conn_type, modal_model, modal_name,
+                 modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_conn_id,
+                 modal_fetch_btn, modal_fetch_status, llm_status],
+    )
+    llm_edit_btn.click(
+        fn=open_modal_edit, inputs=llm_registry_dd,
+        outputs=[llm_modal, modal_mode, modal_provider, modal_conn_type, modal_model, modal_name,
+                 modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_conn_id,
+                 modal_fetch_btn, modal_fetch_status, llm_status],
+    )
+    # Chat Edit: открывает модал на редактирование АКТИВНОГО подключения.
+    # open_modal_edit_active() не требует input — сама читает активное из реестра.
+    chat_edit_btn.click(
+        fn=open_modal_edit_active,
+        outputs=[llm_modal, modal_mode, modal_provider, modal_conn_type, modal_model, modal_name,
+                 modal_apikey, modal_baseurl, modal_folder_id, modal_anthropic_version, modal_conn_id,
+                 modal_fetch_btn, modal_fetch_status, llm_status],
+    )
+    llm_setactive_btn.click(
+        fn=llm_set_active, inputs=llm_registry_dd,
+        outputs=[llm_registry_dd, chat_active_md, llmset_active_md],
+    )
+    llm_delete_btn.click(
+        fn=llm_delete_connection, inputs=llm_registry_dd,
+        outputs=[llm_registry_dd, chat_active_md, llmset_active_md, llm_status],
+    )
+
+    gr.Markdown("---\n*PostgreSQL MCP Autonomous \u2014 Standalone. No subscriptions. Source code available.*")
+
+
+if __name__ == "__main__":
+    try:
+        app.launch(server_name=APP_HOST, server_port=APP_PORT, share=False, show_error=True)
+    except Exception as e:
+        logging.getLogger("pg_mcp").warning("Launch issue: %s", e)

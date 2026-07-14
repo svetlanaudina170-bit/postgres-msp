@@ -1,0 +1,38 @@
+# =========================================================================
+# VERSION: 1.1.0
+# Path: devenv-all.yaml
+# ⚠️ ЭТОТ ФАЙЛ — НЕ РАБОЧИЙ КОНФИГ. Это сохранённый текст-ответ другого
+# AI-чата (markdown с пояснениями "Вот полный рабочий devenv.yaml...",
+# fenced-код-блоками ```yaml/```python и разделами "Как использовать" —
+# ни devenv, ни любой YAML-парсер такое не проглотит как валидный
+# devenv.yaml). devenv не читает файл с именем devenv-all.yaml вообще —
+# он смотрит только на devenv.yaml/devenv.nix (или конкретный --config).
+#
+# Идеи из этого текста, которые оказались полезны, УЖЕ ВНЕДРЕНЫ в реальные
+# рабочие файлы отдельными правками:
+#  - "PostgreSQL 16 как сервис" → включено в devenv.nix (VERSION 1.1.0,
+#    затем порт поправлен на 5432 в VERSION 1.2.0)
+#  - "fastmcp" → НЕ добавлялся как отдельный пакет: то же самое уже
+#    доступно через mcp[cli] (см. pyproject.toml) как mcp.server.fastmcp;
+#    mcp_server.py переписан на этот API (VERSION 2.0.0)
+#
+# НЕ внедрено (осознанно, не запрашивалось явно):
+#  - packages: [ python312, pip, uv, gcc, libpq, psycopg2-binary ] —
+#    Python-зависимости уже управляются через uv/pyproject.toml
+#    (languages.python.uv.sync в devenv.nix), а не напрямую списком
+#    в devenv.nix/devenv.yaml — дублирование создало бы путаницу
+#  - services.postgresql (username/password/database через YAML-сервис
+#    в стиле "другого" devenv-подобного инструмента) — в вашем реальном
+#    devenv.nix используется правильный API именно devenv.sh:
+#    services.postgres (initialScript/settings), не services.postgresql
+#  - env.DATABASE_URL / env.PYTHONPATH внутри devenv.yaml — DATABASE_URL
+#    уже управляется через .env (dotenv.enable = true в devenv.nix),
+#    дублировать его ещё и в devenv.yaml не стал без вашего запроса
+#  - shell.commands (start-server/build-docker/run-docker) и
+#    pathsToCreate — не запрашивалось, могу добавить как devenv
+#    scripts.* (аналогично уже существующему scripts.hello в devenv.nix),
+#    если нужно — скажите
+#
+# Если хотите, чтобы что-то из "не внедрено" выше тоже вошло в реальные
+# файлы — уточните, какие именно пункты, и продолжу.
+# =========================================================================
