@@ -131,6 +131,10 @@ lint.select = [
     "RUF"  # ruff-specific rules
 ]
 
+lint.ignore = [
+    "RUF001",  # Ambiguous Unicode character in string (intentional Cyrillic)
+]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

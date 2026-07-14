@@ -127,9 +127,9 @@ async def test_get_top_queries_integration(local_sql_driver):
         # Get top queries by mean execution time
         mean_result = await calc.get_top_queries_by_time(limit=10, sort_by="mean")
 
-        # Basic verification
-        assert "slowest queries by total execution time" in total_result
-        assert "slowest queries by mean execution time" in mean_result
+        # Basic verification (bilingual)
+        assert "slowest queries by total execution time" in total_result or "самых медленных запросов по общему времени выполнения" in total_result
+        assert "slowest queries by mean execution time" in mean_result or "самых медленных запросов по среднему времени выполнения" in mean_result
 
         # Log results for manual inspection
         logger.info(f"Top queries by total time: {total_result}")
@@ -176,6 +176,6 @@ async def test_extension_not_available(local_sql_driver):
         # Run the test
         result = await calc.get_top_queries_by_time()
 
-        # Check that we get installation instructions
-        assert "not currently installed" in result
+        # Check that we get installation instructions (bilingual)
+        assert "not currently installed" in result or "не установлено" in result
         assert "CREATE EXTENSION" in result
