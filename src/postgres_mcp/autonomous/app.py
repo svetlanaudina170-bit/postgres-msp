@@ -157,6 +157,11 @@ BLOCKS_CSS = """
       background: rgba(0,0,0,0.4);
       z-index: 9998;
     }
+    #status_display textarea {
+      max-height: 200px;
+      overflow-y: auto !important;
+      resize: vertical;
+    }
 """
 
 
@@ -1186,7 +1191,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             with gr.Row():
                 disconnect_btn = gr.Button("\u2716 Disconnect", variant="stop", scale=1, visible=False)
             with gr.Row():
-                status_display = gr.Textbox(label="Status / Databases", interactive=False, scale=3, value=_initial_status)
+                status_display = gr.Textbox(label="Status / Databases", interactive=False, scale=3, value=_initial_status, elem_id="status_display")
 
             saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input], queue=False)
             save_btn.click(fn=handle_save_url, inputs=[url_input, label_input], outputs=[saved_dd, status_display], queue=False)
