@@ -1,0 +1,100 @@
+## PostgreSQL MCP Autonomous — Connection Tab Features
+
+### 📌 Management
+- 📌 Pin / Unpin — закрепить подключение вверху списка
+- ⭐ Set Default — сделать подключение по умолчанию
+
+### ✏️ Edit
+- ✏️ Rename — переименовать подключение
+- 🔍 Edit Connection — загрузить URL/имя для редактирования
+- 💾 Save This URL — сохранить (новое или обновить существующее)
+
+### 🏷️ Tags (Grouping)
+- 🏷️ Filter by Tag — фильтрация списка по тегам
+- Tags input — ввод тегов через запятую (tag1, tag2)
+- Теги сохраняются в connections.json
+- Теги экспортируются/импортируются
+
+### 📦 Import/Export
+- 📤 Export — экспорт всех подключений в JSON
+- 📥 Import — импорт подключений из JSON (дубликаты пропускаются)
+
+### 🔍 Database Selection
+- 🔍 Discover Databases — список доступных БД
+- ✅ Checkmark — выбранная БД отмечена галочкой
+- ✏️ Manual input — возможность ввести имя БД вручную
+- Auto-select — текущая БД из URL предвыбирается
+
+### ⚡ Connection Actions
+- 🔍 Test Connection — проверка доступности перед сохранением
+- 🔵 Connect — подключение к БД
+- ✖ Disconnect — отключение от БД
+
+### 📊 Status
+- 📊 Status / Databases — результат операций (скроллируемый)
+
+### ⚙️ Settings (Show/Hide)
+- 🏷️ Show Tag Filter — показать/скрыть фильтр по тегам
+- 📝 Show Track Changes — показать/скрыть чекбокс отслеживания
+- 🔌 Show Connection Actions — показать/скрыть секцию действий
+- 📊 Show Status Section — показать/скрыть секцию статуса
+- 💾 Save Settings — настройки сохраняются в .env
+
+---
+
+## Implemented Actions Summary
+
+| Category | Action | Description |
+|----------|--------|-------------|
+| 📌 Management | Pin / Unpin | Toggle pinned status |
+| 📌 Management | Set Default | Mark as default connection |
+| ✏️ Edit | Rename | Change connection name |
+| ✏️ Edit | Edit Connection | Load URL/name for editing |
+| ✏️ Edit | Save This URL | Save new or update existing |
+| 🏷️ Tags | Filter by Tag | Filter connections by tag |
+| 🏷️ Tags | Tags Input | Add tags (comma-separated) |
+| 📦 Import/Export | Export | Export to JSON file |
+| 📦 Import/Export | Import | Import from JSON file |
+| 🔍 Database | Discover | List available databases |
+| 🔍 Database | Checkmark | Selected DB marked with ✅ |
+| 🔍 Database | Manual Input | Type DB name manually |
+| ⚡ Actions | Test Connection | Verify connection before save |
+| ⚡ Actions | Connect | Connect to database |
+| ⚡ Actions | Disconnect | Disconnect from database |
+| 📊 Status | Status Display | Show operation results |
+| ⚙️ Settings | Show/Hide Toggle | Toggle section visibility |
+| ⚙️ Settings | Save Settings | Persist to .env |
+
+---
+
+## Possible Extensions
+
+### 📁 Advanced Grouping
+- 📁 Folders — group connections into folders
+- 🏷️ Multi-tag filter — filter by multiple tags
+- 🔍 Search — search connections by name/URL
+- 📊 Usage stats — show last used, connection count
+
+### 🔐 Security
+- 🔐 Vault integration — store secrets in vault
+- 🔑 SSH tunnel support — connect via SSH
+- 🛡️ SSL/TLS options — configure SSL settings
+- 📋 Audit log — track connection changes
+
+### 📊 Monitoring
+- 📈 Latency test — measure connection latency
+- 🔄 Auto-reconnect — reconnect on disconnect
+- 📊 Connection pool — manage connection pooling
+- ⏱️ Uptime tracking — track connection uptime
+
+### 🎨 UI Improvements
+- 🌙 Dark mode toggle — switch between themes
+- 📱 Mobile responsive — optimize for mobile
+- 🔔 Notifications — browser notifications for events
+- 📋 Clipboard copy — copy URL/status to clipboard
+
+### 🔄 Advanced Features
+- 🔄 Sync connections — sync across devices
+- 📤 Export to CSV — export as spreadsheet
+- 🔍 Schema preview — preview database schema
+- 📊 Query history — track executed queries

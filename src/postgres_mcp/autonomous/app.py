@@ -582,6 +582,42 @@ def handle_tag_filter(tag: str, show_val: bool) -> dict:
     return _rebuild_saved_dd_filtered(tag, show_value=show_val)
 
 
+def _load_ui_settings() -> dict:
+    """Load UI settings from .env."""
+    return {
+        "show_tag_filter": os.getenv("UI_SHOW_TAG_FILTER", "true").lower() == "true",
+        "show_track_changes": os.getenv("UI_SHOW_TRACK_CHANGES", "true").lower() == "true",
+        "show_connection_actions": os.getenv("UI_SHOW_CONNECTION_ACTIONS", "true").lower() == "true",
+        "show_status_section": os.getenv("UI_SHOW_STATUS_SECTION", "true").lower() == "true",
+    }
+
+
+def handle_save_ui_settings(show_tag_filter: bool, show_track_changes: bool, show_connection_actions: bool, show_status_section: bool) -> str:
+    """Save UI settings to .env."""
+    save_env_file({
+        "UI_SHOW_TAG_FILTER": str(show_tag_filter).lower(),
+        "UI_SHOW_TRACK_CHANGES": str(show_track_changes).lower(),
+        "UI_SHOW_CONNECTION_ACTIONS": str(show_connection_actions).lower(),
+        "UI_SHOW_STATUS_SECTION": str(show_status_section).lower(),
+    })
+    return "\u2705 Settings saved"
+
+
+def handle_toggle_settings(show: bool) -> dict:
+    """Toggle settings panel visibility."""
+    return gr.update(visible=show)
+
+
+def _apply_ui_settings(settings: dict) -> tuple:
+    """Apply UI settings to components visibility."""
+    return (
+        gr.update(visible=settings["show_tag_filter"]),
+        gr.update(visible=settings["show_track_changes"]),
+        gr.update(visible=settings["show_connection_actions"]),
+        gr.update(visible=settings["show_status_section"]),
+    )
+
+
 def _build_label(conn: dict, show_val: bool) -> str:
     label = conn.get("key", "")
     if conn.get("pinned"):
@@ -1372,23 +1408,35 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 # Tag filter
                 all_tags = get_all_tags(conns)
                 tag_filter_dd = gr.Dropdown(
-                    label="Filter by Tag",
+                    label="\U0001f3f7\ufe0f Filter by Tag",
                     choices=["All"] + all_tags,
                     value="All",
                     interactive=True,
                     scale=1,
                 )
-                # Compact actions as dropdown
+                # Grouped actions as dropdown with separators
                 conn_action_dd = gr.Dropdown(
-                    label="Actions",
-                    choices=["—", "Pin", "Default", "Rename", "Edit", "Export", "Import", "Delete"],
-                    value="—",
+                    label="\u2699\ufe0f Actions",
+                    choices=[
+                        "--- 📌 Management ---",
+                        "\U0001f4cc Pin / Unpin",
+                        "\u2b50 Set Default",
+                        "--- ✏️ Edit ---",
+                        "\u270f\ufe0f Rename",
+                        "\U0001f50d Edit Connection",
+                        "--- 📦 Import/Export ---",
+                        "\U0001f4e4 Export",
+                        "\U0001f4e5 Import",
+                        "--- ⚠️ Danger ---",
+                        "\U0001f5d1 Delete",
+                    ],
+                    value=None,
                     interactive=True,
                     scale=1,
                 )
 
             # === Group 2: Connection Settings ===
-            with gr.Accordion("Connection Settings", open=True):
+            with gr.Accordion("\U0001f527 Connection Settings", open=True):
                 with gr.Row():
                     url_input = gr.Textbox(label="URL", placeholder="postgresql://user:pass@host:5432/db", scale=3, value=db_url)
                     db_selector = gr.Dropdown(
@@ -1418,40 +1466,53 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 import_file = gr.File(label="Import JSON", visible=False, file_types=[".json"])
 
             # === Group 3: Connection Actions ===
-            with gr.Accordion("Connection Actions", open=True):
+            with gr.Accordion("\U0001f50c Connection Actions", open=True) as actions_section:
                 with gr.Row():
                     discover_btn = gr.Button("\U0001f50d Discover Databases", scale=1)
                     test_btn = gr.Button("\u2699\ufe0f Test Connection", scale=1)
-                    connect_btn = gr.Button("Connect", variant="primary", scale=1)
+                    connect_btn = gr.Button("\U0001f535 Connect", variant="primary", scale=1)
                     disconnect_btn = gr.Button("\u2716 Disconnect", variant="stop", scale=1, visible=False)
 
             # === Group 4: Status ===
-            with gr.Accordion("Status / Databases", open=True):
+            with gr.Accordion("\U0001f4ca Status / Databases", open=True) as status_section:
                 status_display = gr.Textbox(label="", interactive=False, value=_initial_status, elem_id="status_display")
+
+            # === Group 5: Settings (Show/Hide) ===
+            _ui_settings = _load_ui_settings()
+            with gr.Accordion("\u2699\ufe0f Connection Settings", open=False) as settings_section:
+                gr.Markdown("Show or hide sections in the Connection tab. Settings are saved to .env.")
+                with gr.Row():
+                    settings_show_tag_filter = gr.Checkbox(label="\U0001f3f7\ufe0f Show Tag Filter", value=_ui_settings["show_tag_filter"], scale=1)
+                    settings_show_track_changes = gr.Checkbox(label="\U0001f4dd Show Track Changes", value=_ui_settings["show_track_changes"], scale=1)
+                    settings_show_conn_actions = gr.Checkbox(label="\U0001f50c Show Connection Actions", value=_ui_settings["show_connection_actions"], scale=1)
+                    settings_show_status = gr.Checkbox(label="\U0001f4ca Show Status Section", value=_ui_settings["show_status_section"], scale=1)
+                settings_save_btn = gr.Button("\U0001f4be Save Settings", variant="primary")
+                settings_status = gr.Textbox(label="", interactive=False)
 
             # --- Action dispatcher ---
             def _dispatch_conn_action(action: str, display: str, show_val: bool, url: str, label: str, editing_id: str, tags_str: str):
                 """Route dropdown action to the appropriate handler."""
-                if action in (None, "—"):
+                # Ignore separator lines and None
+                if action is None or action.startswith("---"):
                     return [gr.update()] * 11
-                if action == "Pin":
+                if action == "\U0001f4cc Pin / Unpin":
                     r = handle_pin_toggle(display, show_val)
                     return r, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                if action == "Default":
+                if action == "\u2b50 Set Default":
                     r1, r2 = handle_set_default(display, show_val)
                     return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                if action == "Rename":
+                if action == "\u270f\ufe0f Rename":
                     r1, r2 = handle_rename(display, label, show_val)
                     return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                if action == "Edit":
+                if action == "\U0001f50d Edit Connection":
                     u, n, eid, t = handle_edit(display, show_val)
                     return gr.update(), gr.update(), gr.update(), u, n, eid, t, gr.update(), gr.update(), gr.update(), gr.update()
-                if action == "Export":
+                if action == "\U0001f4e4 Export":
                     fp, msg = handle_export_connections()
                     return gr.update(), gr.update(), msg, gr.update(), gr.update(), gr.update(), gr.update(), fp, gr.update(), gr.update(), gr.update()
-                if action == "Import":
+                if action == "\U0001f4e5 Import":
                     return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(True)
-                if action == "Delete":
+                if action == "\U0001f5d1 Delete":
                     # Open delete confirmation modal
                     r = open_delete_confirm(display, show_val)
                     return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), r[0], gr.update(), gr.update()
@@ -1466,7 +1527,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             )
 
             # Reset action dropdown after selection
-            conn_action_dd.change(fn=lambda: "—", inputs=[], outputs=[conn_action_dd], queue=False)
+            conn_action_dd.change(fn=lambda: None, inputs=[], outputs=[conn_action_dd], queue=False)
 
             # --- Tag filter ---
             tag_filter_dd.change(fn=handle_tag_filter, inputs=[tag_filter_dd, show_value_cb], outputs=[saved_dd], queue=False)
@@ -1484,6 +1545,26 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             show_value_cb.change(fn=handle_show_value_toggle, inputs=[show_value_cb, saved_dd], outputs=saved_dd, queue=False)
             show_value_cb.change(fn=lambda v: save_env_file({"SHOW_VALUE": str(v).lower()}) or None, inputs=show_value_cb, outputs=[], queue=False)
             track_cb.change(fn=lambda v: save_env_file({"TRACK_CHANGES": str(v).lower()}) or None, inputs=track_cb, outputs=[], queue=False)
+
+            # --- Settings save ---
+            settings_save_btn.click(
+                fn=handle_save_ui_settings,
+                inputs=[settings_show_tag_filter, settings_show_track_changes, settings_show_conn_actions, settings_show_status],
+                outputs=[settings_status],
+                queue=False,
+            )
+            # Apply settings on save - toggle visibility
+            settings_save_btn.click(
+                fn=lambda st, sst, sca, ss: (
+                    gr.update(visible=st),   # tag_filter_dd
+                    gr.update(visible=sst),  # track_cb
+                    gr.update(visible=sca),  # actions_section
+                    gr.update(visible=ss),   # status_section
+                ),
+                inputs=[settings_show_tag_filter, settings_show_track_changes, settings_show_conn_actions, settings_show_status],
+                outputs=[tag_filter_dd, track_cb, actions_section, status_section],
+                queue=False,
+            )
 
         with gr.TabItem("\U0001f4ac Chat"):
             # readonly-показ активного LLM-подключения + кнопка Edit
