@@ -729,6 +729,25 @@ def handle_save_url_edit(url: str, key: str, editing_id: str) -> tuple[dict, str
     return _rebuild_saved_dd(conns), "\u2705 Connection saved", ""
 
 
+async def handle_test_connection(url: str) -> str:
+    """Test a database connection without saving."""
+    if not url.strip():
+        return "\u26a0\ufe0f Enter a URL to test"
+    target = url.strip()
+    # Create a temporary pg client for testing
+    from .pg_client import PgClient
+    test_pg = PgClient()
+    err = await test_pg.connect(target)
+    if err:
+        return f"\u274c Connection failed: {err}"
+    r = await test_pg.execute_sql("SELECT version()")
+    await test_pg.disconnect()
+    if r.error:
+        return f"\u274c Query failed: {r.error}"
+    version = r.rows[0][0] if r.rows else "Unknown"
+    return f"\u2705 Connection successful!\n{version}"
+
+
 def handle_delete(display: str, show_val: bool) -> tuple[dict, str, str, str]:
     conn = _find_from_dd(display, show_val)
     if not conn:
@@ -1225,6 +1244,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 )
             with gr.Row():
                 discover_btn = gr.Button("\U0001f50d Discover Databases", scale=1)
+                test_btn = gr.Button("\u2699\ufe0f Test Connection", scale=1)
                 connect_btn = gr.Button("Connect", variant="primary", scale=1)
             with gr.Row():
                 disconnect_btn = gr.Button("\u2716 Disconnect", variant="stop", scale=1, visible=False)
@@ -1238,6 +1258,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             rename_btn.click(fn=handle_rename, inputs=[saved_dd, label_input, show_value_cb], outputs=[saved_dd, status_display], queue=False)
             edit_btn.click(fn=handle_edit, inputs=[saved_dd, show_value_cb], outputs=[url_input, label_input, _editing_conn_id], queue=False)
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
+            test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display, queue=False)
             connect_btn.click(
                 fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False
             )
