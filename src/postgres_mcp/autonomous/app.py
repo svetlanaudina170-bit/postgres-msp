@@ -1475,7 +1475,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 chat_active_md = gr.Markdown(_INITIAL_ACTIVE_MD)
                 chat_edit_btn = gr.Button("\u270f Edit LLM Connection", scale=1)
             gr.Markdown("Ask questions about your database in natural language.")
-            chatbot = gr.Chatbot(label="Chat", height=450)
+            chatbot = gr.Chatbot(label="Chat", height=450, type="messages")
             msg = gr.Textbox(label="Message", placeholder="e.g. Show me all tables")
             with gr.Row():
                 gr.Button("Clear").click(fn=lambda: ([], ""), outputs=[chatbot, msg])
