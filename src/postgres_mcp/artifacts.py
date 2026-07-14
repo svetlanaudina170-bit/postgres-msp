@@ -25,9 +25,12 @@
 
 import difflib
 import json
-from typing import Any, List, Optional, Union
+from typing import Any
+from typing import List
+from typing import Optional
 
-from attrs import define, field
+from attrs import define
+from attrs import field
 
 # Константа для обозначения бесконечного улучшения производительности
 # Если стоимость рекомендации равна 0.0, возвращается это значение

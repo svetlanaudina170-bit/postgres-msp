@@ -30,8 +30,12 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse, urlunparse
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from urllib.parse import urlparse
+from urllib.parse import urlunparse
 
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool

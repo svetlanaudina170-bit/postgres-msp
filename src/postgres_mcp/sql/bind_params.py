@@ -27,10 +27,23 @@
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Set
+from typing import Tuple
+from typing import Union
 
 from pglast import parse_sql
-from pglast.ast import A_Expr, ColumnRef, JoinExpr, Node, RangeVar, SelectStmt, SortBy, SortGroupClause
+from pglast.ast import A_Expr
+from pglast.ast import ColumnRef
+from pglast.ast import JoinExpr
+from pglast.ast import Node
+from pglast.ast import RangeVar
+from pglast.ast import SelectStmt
+from pglast.ast import SortBy
+from pglast.ast import SortGroupClause
 from pglast.visitors import Visitor
 
 from .safe_sql import SafeSqlDriver

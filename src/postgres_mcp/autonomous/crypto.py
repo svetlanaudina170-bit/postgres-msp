@@ -26,8 +26,8 @@
 #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 # =========================================================================
 
-import os
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 

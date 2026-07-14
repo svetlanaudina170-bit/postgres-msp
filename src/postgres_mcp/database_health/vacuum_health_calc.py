@@ -29,9 +29,13 @@
 # - Результаты возвращаются в виде строк для удобства представления.
 
 from dataclasses import dataclass
-from typing import List, Dict, Any, Union
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Union
 
-from ..sql import SafeSqlDriver, SqlDriver
+from ..sql import SafeSqlDriver
+from ..sql import SqlDriver
 
 
 # Описание класса TransactionIdMetrics

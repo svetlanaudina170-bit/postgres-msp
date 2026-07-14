@@ -64,33 +64,31 @@ import gradio as gr
 import yaml
 from dotenv import load_dotenv
 
-from .pg_client import PostgresClient
-from .llm_client import get_llm_client, build_llm_client_from_connection, LLMClient, LLMResponse
-from .connection_store import (
-    load_connections,
-    build_choices,
-    parse_display,
-    find_by_key,
-    find_by_value,
-    find_by_id,
-    find_by_key_and_masked_value,
-    match_existing,
-    match_by_server,
-    add_connection,
-    update_connection,
-    delete_connection,
-    toggle_pin,
-    bump_usage,
-    update_key,
-    set_default,
-    get_default,
-    is_key_taken,
-    _make_key_from_url,
-    _parse_url_parts,
-    _mask_password,
-)
 from . import llm_connection_store as llm_conn_store
-from .crypto import is_encryption_enabled
+from .connection_store import _make_key_from_url
+from .connection_store import _mask_password
+from .connection_store import _parse_url_parts
+from .connection_store import add_connection
+from .connection_store import build_choices
+from .connection_store import bump_usage
+from .connection_store import delete_connection
+from .connection_store import find_by_key
+from .connection_store import find_by_key_and_masked_value
+from .connection_store import find_by_value
+from .connection_store import get_default
+from .connection_store import is_key_taken
+from .connection_store import load_connections
+from .connection_store import match_by_server
+from .connection_store import match_existing
+from .connection_store import parse_display
+from .connection_store import set_default
+from .connection_store import toggle_pin
+from .connection_store import update_key
+from .llm_client import LLMClient
+from .llm_client import LLMResponse
+from .llm_client import build_llm_client_from_connection
+from .llm_client import get_llm_client
+from .pg_client import PostgresClient
 
 # Compute ENV_PATH before load_dotenv so it finds .env regardless of CWD
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -284,7 +282,7 @@ def _load_yaml(path: str, fallback: dict) -> dict:
         logger.warning(f"Config file not found: {path}. Using built-in fallback.")
         return fallback
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return data if data else fallback
     except Exception as e:
@@ -431,7 +429,7 @@ def _llm_conn_choices() -> list[str]:
 def save_env_file(updates: dict[str, str]) -> None:
     lines = []
     if os.path.exists(ENV_PATH):
-        with open(ENV_PATH, "r", encoding="utf-8") as f:
+        with open(ENV_PATH, encoding="utf-8") as f:
             lines = f.readlines()
     updated = set()
     for i, line in enumerate(lines):
@@ -857,7 +855,7 @@ def _open_modal_with(mode, provider, conn_type, model, name, conn_id="", params=
 
     # Значения параметров (дефолт + переданное)
     def _val(field):
-        if field in params and params[field]:
+        if params.get(field):
             return params[field]
         return _param_default(conn_type, field, provider, mode)
 

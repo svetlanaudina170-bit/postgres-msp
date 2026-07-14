@@ -23,7 +23,10 @@
 # - Поле _cached_indexes не используется в текущей реализации, но определено как классовая переменная.
 # - Результаты возвращаются в виде строк для удобства представления.
 
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from ..sql import SqlDriver
 

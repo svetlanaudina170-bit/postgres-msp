@@ -23,7 +23,8 @@
 
 """Инструменты для оценки состояния базы данных PostgreSQL."""
 
-from .database_health import DatabaseHealthTool, HealthType
+from .database_health import DatabaseHealthTool
+from .database_health import HealthType
 
 # Определение публичного интерфейса пакета
 __all__ = ["DatabaseHealthTool", "HealthType"]

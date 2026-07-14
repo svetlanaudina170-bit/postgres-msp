@@ -1,13 +1,18 @@
 import asyncio
 import json
 import logging
-from typing import Dict, List, Any, Optional
+import os
 from dataclasses import dataclass
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+
 import aiohttp
 import openai
 import requests
 from dotenv import load_dotenv
-import os
+
 from postgres_mcp.sql import obfuscate_password
 
 # Загрузим ключи из .env
@@ -342,7 +347,7 @@ class MultiModelMCPClient:
                     return f"Ошибка: {tool_result['error']['message']}"
 
                 # Обработка ответа в формате ResponseType (список словарей)
-                if "content" in tool_result and tool_result["content"]:
+                if tool_result.get("content"):
                     content = tool_result["content"]
                     if isinstance(content, list) and len(content) > 0 and "text" in content[0]:
                         return content[0]["text"]
@@ -350,7 +355,7 @@ class MultiModelMCPClient:
                 return json.dumps(tool_result, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"Ошибка вызова инструмента {tool_name}: {e}")
-            return f"Ошибка: {str(e)}"
+            return f"Ошибка: {e!s}"
 
     async def chat_with_openai(self, model_name: str, message: str) -> str:
         """Чат с OpenAI-совместимой моделью"""
@@ -428,7 +433,7 @@ class MultiModelMCPClient:
 
                         tool_args.update(smtp_params)
 
-                        print(f"\nПодтвердите отправку письма:")
+                        print("\nПодтвердите отправку письма:")
                         print(f"Получатель: {tool_args.get('to_email')}")
                         print(f"Тема: {tool_args.get('subject')}")
                         print(f"Тело: {tool_args.get('body')[:100]}{'...' if len(tool_args.get('body', '')) > 100 else ''}")
@@ -455,7 +460,7 @@ class MultiModelMCPClient:
 
         except Exception as e:
             logger.error(f"Ошибка вызова модели {model_name}: {e}")
-            return f"Ошибка: {str(e)}"
+            return f"Ошибка: {e!s}"
 
     def chat_with_gigachat(self, message: str) -> str:
         """Чат с GigaChat"""
@@ -500,7 +505,7 @@ class MultiModelMCPClient:
                 logger.debug(f"Ответ GigaChat: {json.dumps(data, ...)}")
                 response_message = data["choices"][0]["message"]
 
-                if "tool_calls" in response_message and response_message["tool_calls"]:
+                if response_message.get("tool_calls"):
                     logger.info(f"GigaChat запросил вызовов инструментов: {len(response_message['tool_calls'])}")
                     messages.append(response_message)
 
@@ -525,7 +530,7 @@ class MultiModelMCPClient:
 
                             tool_args.update(smtp_params)
 
-                            print(f"\nПодтвердите отправку письма:")
+                            print("\nПодтвердите отправку письма:")
                             print(f"Получатель: {tool_args.get('to_email')}")
                             print(f"Тема: {tool_args.get('subject')}")
                             print(f"Тело: {tool_args.get('body')[:100]}{'...' if len(tool_args.get('body', '')) > 100 else ''}")
@@ -564,7 +569,7 @@ class MultiModelMCPClient:
 
         except Exception as e:
             logger.error(f"Ошибка вызова GigaChat: {e}")
-            return f"Ошибка: {str(e)}"
+            return f"Ошибка: {e!s}"
 
     def clear_history(self):
         """Очистить историю разговора"""
@@ -619,7 +624,7 @@ async def main():
     # Загрузка MCP-серверов из mcp_config.json
     mcp_config_path = "mcp_config.json"
     if os.path.exists(mcp_config_path):
-        with open(mcp_config_path, "r", encoding="utf-8") as f:
+        with open(mcp_config_path, encoding="utf-8") as f:
             mcp_config = json.load(f)
             for server_name, server_data in mcp_config["mcpServers"].items():
                 client.add_mcp_server(

@@ -26,7 +26,10 @@
 # - Результаты возвращаются в виде строк или списков объектов для удобства представления.
 
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 from ..sql import SqlDriver
 

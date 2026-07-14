@@ -21,7 +21,9 @@
 # где требуется работа с индексами.
 
 from dataclasses import dataclass
-from typing import Any, Tuple, Dict
+from typing import Any
+from typing import Dict
+from typing import Tuple
 
 
 # Описание класса IndexDefinition

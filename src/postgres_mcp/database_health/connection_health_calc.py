@@ -26,7 +26,9 @@
 # - Результаты возвращаются в виде строк для удобства представления.
 
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import Any
+from typing import Dict
+from typing import List
 
 from ..sql import SqlDriver
 

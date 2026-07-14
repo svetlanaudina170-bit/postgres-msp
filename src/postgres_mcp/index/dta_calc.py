@@ -30,13 +30,28 @@
 import logging
 import time
 from itertools import combinations
-from typing import Optional, Any, Dict, FrozenSet, List, Set, Tuple, override
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Set
+from typing import Tuple
+from typing import override
 
 import humanize
-from pglast.ast import ColumnRef, JoinExpr, Node, SelectStmt
+from pglast.ast import ColumnRef
+from pglast.ast import JoinExpr
+from pglast.ast import Node
+from pglast.ast import SelectStmt
 
-from ..sql import ColumnCollector, SafeSqlDriver, SqlDriver, TableAliasVisitor
-from .index_opt_base import IndexRecommendation, IndexTuningBase, candidate_str, pp_list
+from ..sql import ColumnCollector
+from ..sql import SafeSqlDriver
+from ..sql import SqlDriver
+from ..sql import TableAliasVisitor
+from .index_opt_base import IndexRecommendation
+from .index_opt_base import IndexTuningBase
+from .index_opt_base import candidate_str
+from .index_opt_base import pp_list
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
@@ -570,7 +585,8 @@ class DatabaseTuningAdvisor(IndexTuningBase):
             str: Строковое представление выражения
         """
         try:
-            from pglast.ast import ColumnRef, FuncCall
+            from pglast.ast import ColumnRef
+            from pglast.ast import FuncCall
 
             if isinstance(expr, FuncCall):
                 func_name: str = ".".join([name.sval for name in expr.funcname if hasattr(name, "sval")])

@@ -27,7 +27,10 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
 import humanize
 
@@ -35,7 +38,8 @@ from ..artifacts import ExplainPlanArtifact
 from ..artifacts import calculate_improvement_multiple
 from ..sql import SqlDriver
 from .dta_calc import IndexTuningBase
-from .index_opt_base import IndexDefinition, IndexTuningResult
+from .index_opt_base import IndexDefinition
+from .index_opt_base import IndexTuningResult
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)

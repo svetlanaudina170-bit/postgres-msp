@@ -29,11 +29,15 @@
 # - Результаты возвращаются в виде строк для удобства представления.
 
 from dataclasses import dataclass
-from typing import List, Dict, Any, Tuple
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Tuple
 
 from psycopg.sql import Identifier
 
-from ..sql import SafeSqlDriver, SqlDriver
+from ..sql import SafeSqlDriver
+from ..sql import SqlDriver
 
 
 # Описание класса SequenceMetrics

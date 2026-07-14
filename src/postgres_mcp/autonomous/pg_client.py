@@ -22,12 +22,14 @@
 #    Если это нежелательное изменение поведения — сообщите, откачу.
 # =========================================================================
 
-import os
-import asyncpg
 import logging
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass
+from dataclasses import field
 from typing import Optional
 from urllib.parse import urlparse
+
+import asyncpg
 
 logger = logging.getLogger(__name__)
 

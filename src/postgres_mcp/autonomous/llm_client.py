@@ -20,11 +20,12 @@
 #  - Base URL провайдеров / LLM_HTTP_TIMEOUT / ANTHROPIC_API_VERSION вынесены в .env.
 # =========================================================================
 
-import os
 import json
 import logging
-from typing import Optional, AsyncIterator
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Optional
 
 import httpx
 

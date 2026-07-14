@@ -24,10 +24,15 @@
 # для обработки запросов через инструмент get_top_queries.
 
 import logging
-from typing import Literal, LiteralString, Union, cast
+from typing import Literal
+from typing import LiteralString
+from typing import Union
+from typing import cast
 
-from ..sql import SafeSqlDriver, SqlDriver
-from ..sql.extension_utils import check_extension, get_postgres_version
+from ..sql import SafeSqlDriver
+from ..sql import SqlDriver
+from ..sql.extension_utils import check_extension
+from ..sql.extension_utils import get_postgres_version
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)

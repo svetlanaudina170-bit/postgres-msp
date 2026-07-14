@@ -34,7 +34,11 @@
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, FrozenSet, List, Set, Tuple, override
+from typing import Any
+from typing import List
+from typing import Set
+from typing import Tuple
+from typing import override
 
 import instructor
 from openai import OpenAI
@@ -45,8 +49,10 @@ from postgres_mcp.artifacts import ErrorResult
 from postgres_mcp.explain.explain_plan import ExplainPlanTool
 from postgres_mcp.sql import TableAliasVisitor
 
-from ..sql import IndexDefinition, SqlDriver
-from .index_opt_base import IndexRecommendation, IndexTuningBase
+from ..sql import IndexDefinition
+from ..sql import SqlDriver
+from .index_opt_base import IndexRecommendation
+from .index_opt_base import IndexTuningBase
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)

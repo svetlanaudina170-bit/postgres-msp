@@ -34,7 +34,8 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import List, Set
+from typing import List
+from typing import Set
 
 import mcp.types as types
 

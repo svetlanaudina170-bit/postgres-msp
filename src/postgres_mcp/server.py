@@ -24,25 +24,34 @@ import argparse
 import asyncio
 import logging
 import os
-import signal
 import sys
-import json
+from dataclasses import asdict
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, List, Union, Dict, Literal
-from dataclasses import dataclass, asdict
-from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Literal
+from typing import Union
+
 import uvicorn
+from fastapi import FastAPI
+from fastapi import Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import Field
-from postgres_mcp.database_health import DatabaseHealthTool, HealthType
+
+from postgres_mcp.database_health import DatabaseHealthTool
+from postgres_mcp.database_health import HealthType
 from postgres_mcp.explain import ExplainPlanTool
-from postgres_mcp.index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
+from postgres_mcp.index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from postgres_mcp.index.llm_opt import LLMOptimizerTool
 from postgres_mcp.index.presentation import TextPresentation
+from postgres_mcp.sql import DbConnPool
+from postgres_mcp.sql import SafeSqlDriver
+from postgres_mcp.sql import SqlDriver
+from postgres_mcp.sql import obfuscate_password
 from postgres_mcp.top_queries.top_queries_calc import TopQueriesCalc
-from postgres_mcp.sql import DbConnPool, SafeSqlDriver, SqlDriver, check_hypopg_installation_status, obfuscate_password
 
 # Установка событийного цикла для Windows
 if sys.platform == "win32":

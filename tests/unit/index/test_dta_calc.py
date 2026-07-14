@@ -147,11 +147,8 @@ async def test_generate_candidates(async_sql_driver, create_dta):
     async def mock_execute_query(query):
         global responses_index
         responses_index += 1
-        logger.info(
-            f"Query: {query}\n    Response: {
-                list(json.dumps(x.cells) for x in responses[responses_index - 1]) if responses_index <= len(responses) else None
-            }\n--------------------------------------------------------"
-        )
+        resp = list(json.dumps(x.cells) for x in responses[responses_index - 1]) if responses_index <= len(responses) else None
+        logger.info(f"Query: {query}\n    Response: {resp}\n--------------------------------------------------------")
         return responses[responses_index - 1] if responses_index <= len(responses) else None
 
     async_sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)
@@ -563,11 +560,8 @@ async def test_basic_workload_analysis(async_sql_driver):
     async def mock_execute_query(query, *args, **kwargs):
         global responses_index
         responses_index += 1
-        logger.info(
-            f"Query: {query}\n    Response: {
-                list(json.dumps(x.cells) for x in responses[responses_index - 1]) if responses_index <= len(responses) else None
-            }\n--------------------------------------------------------"
-        )
+        resp = list(json.dumps(x.cells) for x in responses[responses_index - 1]) if responses_index <= len(responses) else None
+        logger.info(f"Query: {query}\n    Response: {resp}\n--------------------------------------------------------")
         return responses[responses_index - 1] if responses_index <= len(responses) else None
 
     async_sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)

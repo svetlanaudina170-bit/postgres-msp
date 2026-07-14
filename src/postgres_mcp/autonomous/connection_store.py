@@ -10,16 +10,18 @@
 #    с заданным ключом шифруются автоматически (мягкая миграция).
 # =========================================================================
 
-import os
-import re
 import json
 import logging
+import os
+import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .crypto import encrypt_value, decrypt_value
+from .crypto import decrypt_value
+from .crypto import encrypt_value
 
 logger = logging.getLogger(__name__)
 

@@ -74,11 +74,11 @@ PostgreSQL MCP Server — подключается к PostgreSQL и предос
   }
 """
 
+import json
+import logging
 import os
 import re
 import sys
-import json
-import logging
 from typing import Optional
 
 from dotenv import load_dotenv

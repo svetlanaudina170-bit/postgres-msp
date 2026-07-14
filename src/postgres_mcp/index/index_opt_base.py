@@ -36,16 +36,30 @@
 import json
 import logging
 import time
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
+from abc import ABC
+from abc import abstractmethod
+from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
+from typing import Dict
+from typing import FrozenSet
+from typing import Iterable
+from typing import List
+from typing import Optional
+from typing import Set
+from typing import Tuple
 
 from pglast import parse_sql
 from pglast.ast import SelectStmt
 
 from ..artifacts import calculate_improvement_multiple
 from ..explain import ExplainPlanTool
-from ..sql import IndexDefinition, SafeSqlDriver, SqlBindParams, SqlDriver, TableAliasVisitor, check_hypopg_installation_status
+from ..sql import IndexDefinition
+from ..sql import SafeSqlDriver
+from ..sql import SqlBindParams
+from ..sql import SqlDriver
+from ..sql import TableAliasVisitor
+from ..sql import check_hypopg_installation_status
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)

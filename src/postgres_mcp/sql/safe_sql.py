@@ -33,79 +33,85 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any, ClassVar, List, Optional, Set, Type, Union
+from typing import Any
+from typing import ClassVar
+from typing import List
+from typing import Optional
+from typing import Set
+from typing import Type
+from typing import Union
 
 import pglast
-from pglast.ast import (
-    A_ArrayExpr,
-    A_Const,
-    A_Expr,
-    A_Indices,
-    A_Indirection,
-    A_Star,
-    Alias,
-    BitString,
-    Boolean,
-    BooleanTest,
-    BoolExpr,
-    CaseExpr,
-    CaseWhen,
-    ClosePortalStmt,
-    CoalesceExpr,
-    CollateClause,
-    ColumnRef,
-    CommonTableExpr,
-    CreateExtensionStmt,
-    DeallocateStmt,
-    DeclareCursorStmt,
-    DefElem,
-    ExplainStmt,
-    FetchStmt,
-    Float,
-    FromExpr,
-    FuncCall,
-    GroupingFunc,
-    GroupingSet,
-    Integer,
-    JoinExpr,
-    MinMaxExpr,
-    NamedArgExpr,
-    Node,
-    NotifyStmt,
-    NullTest,
-    ParamRef,
-    PrepareStmt,
-    RangeFunction,
-    RangeSubselect,
-    RangeTableFunc,
-    RangeTableFuncCol,
-    RangeTableSample,
-    RangeVar,
-    RawStmt,
-    ResTarget,
-    RowCompareExpr,
-    RowExpr,
-    ScalarArrayOpExpr,
-    SelectStmt,
-    SortBy,
-    SortGroupClause,
-    SQLValueFunction,
-    String,
-    SubLink,
-    TableFunc,
-    TableSampleClause,
-    TargetEntry,
-    TypeCast,
-    TypeName,
-    VacuumStmt,
-    VariableShowStmt,
-    WithClause,
-    WindowClause,
-    WindowDef,
-    WindowFunc,
-)
+from pglast.ast import A_ArrayExpr
+from pglast.ast import A_Const
+from pglast.ast import A_Expr
+from pglast.ast import A_Indices
+from pglast.ast import A_Indirection
+from pglast.ast import A_Star
+from pglast.ast import Alias
+from pglast.ast import BitString
+from pglast.ast import Boolean
+from pglast.ast import BooleanTest
+from pglast.ast import BoolExpr
+from pglast.ast import CaseExpr
+from pglast.ast import CaseWhen
+from pglast.ast import ClosePortalStmt
+from pglast.ast import CoalesceExpr
+from pglast.ast import CollateClause
+from pglast.ast import ColumnRef
+from pglast.ast import CommonTableExpr
+from pglast.ast import CreateExtensionStmt
+from pglast.ast import DeallocateStmt
+from pglast.ast import DeclareCursorStmt
+from pglast.ast import DefElem
+from pglast.ast import ExplainStmt
+from pglast.ast import FetchStmt
+from pglast.ast import Float
+from pglast.ast import FromExpr
+from pglast.ast import FuncCall
+from pglast.ast import GroupingFunc
+from pglast.ast import GroupingSet
+from pglast.ast import Integer
+from pglast.ast import JoinExpr
+from pglast.ast import MinMaxExpr
+from pglast.ast import NamedArgExpr
+from pglast.ast import Node
+from pglast.ast import NotifyStmt
+from pglast.ast import NullTest
+from pglast.ast import ParamRef
+from pglast.ast import PrepareStmt
+from pglast.ast import RangeFunction
+from pglast.ast import RangeSubselect
+from pglast.ast import RangeTableFunc
+from pglast.ast import RangeTableFuncCol
+from pglast.ast import RangeTableSample
+from pglast.ast import RangeVar
+from pglast.ast import RawStmt
+from pglast.ast import ResTarget
+from pglast.ast import RowCompareExpr
+from pglast.ast import RowExpr
+from pglast.ast import ScalarArrayOpExpr
+from pglast.ast import SelectStmt
+from pglast.ast import SortBy
+from pglast.ast import SortGroupClause
+from pglast.ast import SQLValueFunction
+from pglast.ast import String
+from pglast.ast import SubLink
+from pglast.ast import TableFunc
+from pglast.ast import TableSampleClause
+from pglast.ast import TargetEntry
+from pglast.ast import TypeCast
+from pglast.ast import TypeName
+from pglast.ast import VacuumStmt
+from pglast.ast import VariableShowStmt
+from pglast.ast import WindowClause
+from pglast.ast import WindowDef
+from pglast.ast import WindowFunc
+from pglast.ast import WithClause
 from pglast.enums import A_Expr_Kind
-from psycopg.sql import SQL, Composable, Literal
+from psycopg.sql import SQL
+from psycopg.sql import Composable
+from psycopg.sql import Literal
 from typing_extensions import LiteralString
 
 from .sql_driver import SqlDriver

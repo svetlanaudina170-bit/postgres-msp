@@ -26,9 +26,13 @@
 # - Класс использует асинхронные методы для выполнения запросов к базе данных.
 # - Результаты возвращаются в виде строк для удобства представления.
 
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 
-from ..sql import SafeSqlDriver, SqlDriver
+from ..sql import SafeSqlDriver
+from ..sql import SqlDriver
 
 
 # Описание класса IndexHealthCalc

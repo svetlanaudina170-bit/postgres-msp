@@ -29,16 +29,24 @@
 # - Используется TYPE_CHECKING для условного импорта типов, чтобы избежать циклических зависимостей.
 
 # Игнорирование проверки длины строк для ruff
-# ruff: noqa: E501
 
 from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Tuple
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import Dict
+from typing import FrozenSet
+from typing import List
+from typing import Tuple
 
-from ..artifacts import ErrorResult, ExplainPlanArtifact
-from ..sql import IndexDefinition, SafeSqlDriver, SqlBindParams, check_postgres_version_requirement
+from ..artifacts import ErrorResult
+from ..artifacts import ExplainPlanArtifact
+from ..sql import IndexDefinition
+from ..sql import SafeSqlDriver
+from ..sql import SqlBindParams
+from ..sql import check_postgres_version_requirement
 
 # Инициализация логгера
 logger = logging.getLogger(__name__)
