@@ -782,6 +782,50 @@ def handle_export_connections() -> tuple:
     return tmp_path, f"\u2705 Exported {len(export_data)} connections"
 
 
+def handle_import_connections(file) -> tuple[dict, str]:
+    """Import connections from a JSON file."""
+    import json
+
+    if file is None:
+        return gr.update(), "\u26a0\ufe0f No file selected"
+
+    try:
+        with open(file.name, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        return gr.update(), f"\u274c Failed to read file: {e}"
+
+    if not isinstance(data, list):
+        return gr.update(), "\u274c Invalid file format — expected JSON array"
+
+    conns = load_connections()
+    existing_urls = {c.get("value", "") for c in conns}
+    imported = 0
+    skipped = 0
+
+    for item in data:
+        url = item.get("url", "")
+        name = item.get("name", "")
+
+        if not url:
+            skipped += 1
+            continue
+
+        # Skip if URL already exists
+        if url in existing_urls:
+            skipped += 1
+            continue
+
+        conns = add_connection(url, name, conns)
+        existing_urls.add(url)
+        imported += 1
+
+    msg = f"\u2705 Imported {imported} connections"
+    if skipped:
+        msg += f", skipped {skipped} (duplicates or empty)"
+    return _rebuild_saved_dd(conns), msg
+
+
 def handle_delete(display: str, show_val: bool) -> tuple[dict, str, str, str]:
     conn = _find_from_dd(display, show_val)
     if not conn:
@@ -1251,6 +1295,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 rename_btn = gr.Button("\u270f Rename", scale=1)
                 edit_btn = gr.Button("\u270f Edit", scale=1)
                 export_btn = gr.Button("\U0001f4e4 Export", scale=1)
+                import_btn = gr.Button("\U0001f4e5 Import", scale=1)
                 delete_btn = gr.Button("\U0001f5d1 Delete", scale=1)
             with gr.Row():
                 label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
@@ -1264,6 +1309,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                     value=os.getenv("SHOW_VALUE", "false").lower() == "true",
                     scale=1,
                 )
+                import_file = gr.File(label="Import JSON", visible=False, file_types=[".json"])
             save_btn = gr.Button("\U0001f4be Save This URL")
             _editing_conn_id = gr.Textbox(visible=False)  # tracks connection being edited
             with gr.Row():
@@ -1293,6 +1339,8 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             rename_btn.click(fn=handle_rename, inputs=[saved_dd, label_input, show_value_cb], outputs=[saved_dd, status_display], queue=False)
             edit_btn.click(fn=handle_edit, inputs=[saved_dd, show_value_cb], outputs=[url_input, label_input, _editing_conn_id], queue=False)
             export_btn.click(fn=handle_export_connections, outputs=[gr.File(label="Download"), status_display], queue=False)
+            import_btn.click(fn=lambda: gr.update(visible=True), outputs=[import_file], queue=False)
+            import_file.upload(fn=handle_import_connections, inputs=[import_file], outputs=[saved_dd, status_display], queue=False)
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
             test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display, queue=False)
             connect_btn.click(
