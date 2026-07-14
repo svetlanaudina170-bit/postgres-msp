@@ -5,9 +5,8 @@ from pathlib import Path
 from typing import Generator
 from typing import Tuple
 
-import pytest
-
 import docker
+import pytest
 from docker import errors as docker_errors
 
 logger = logging.getLogger(__name__)
