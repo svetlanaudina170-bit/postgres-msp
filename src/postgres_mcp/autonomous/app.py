@@ -1198,9 +1198,6 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             pin_btn.click(fn=handle_pin_toggle, inputs=[saved_dd, show_value_cb], outputs=saved_dd, queue=False)
             default_btn.click(fn=handle_set_default, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, status_display], queue=False)
             rename_btn.click(fn=handle_rename, inputs=[saved_dd, label_input, show_value_cb], outputs=[saved_dd, status_display], queue=False)
-            delete_btn.click(
-                fn=handle_delete, inputs=[saved_dd, show_value_cb], outputs=[saved_dd, url_input, label_input, status_display], queue=False
-            )
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
             connect_btn.click(
                 fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False
@@ -1453,6 +1450,55 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
         inputs=llm_registry_dd,
         outputs=[llm_registry_dd, chat_active_md, llmset_active_md, llm_status],
     )
+
+    # --- Delete confirmation modal ---
+    with gr.Column(visible=False, elem_id="llm-modal") as delete_confirm_modal:
+        gr.Markdown("### ⚠️ Delete Connection")
+        delete_confirm_name = gr.Textbox(label="Connection", interactive=False)
+        delete_confirm_info = gr.Textbox(label="", interactive=False, lines=3)
+        with gr.Row():
+            delete_confirm_yes = gr.Button("🗑 Delete", variant="stop", scale=1)
+            delete_confirm_no = gr.Button("Cancel", scale=1)
+        # hidden: current dd value + show_val for the actual delete
+        _delete_dd_ref = gr.Textbox(visible=False)
+        _delete_showval_ref = gr.Checkbox(visible=False)
+
+    def open_delete_confirm(display: str, show_val: bool) -> tuple:
+        conn = _find_from_dd(display, show_val)
+        if not conn:
+            return gr.update(visible=False), "", "", display, show_val
+        info_lines = []
+        if conn.get("key"):
+            info_lines.append(f"Name: {conn['key']}")
+        if conn.get("value"):
+            info_lines.append(f"URL: {conn['value']}")
+        return (
+            gr.update(visible=True),
+            conn.get("key", ""),
+            "\n".join(info_lines),
+            display,
+            show_val,
+        )
+
+    def confirm_delete_yes(dd_val: str, show_val: bool) -> tuple:
+        return handle_delete(dd_val, show_val) + (gr.update(visible=False),)
+
+    def confirm_delete_no() -> dict:
+        return gr.update(visible=False)
+
+    delete_btn.click(
+        fn=open_delete_confirm,
+        inputs=[saved_dd, show_value_cb],
+        outputs=[delete_confirm_modal, delete_confirm_name, delete_confirm_info, _delete_dd_ref, _delete_showval_ref],
+        queue=False,
+    )
+    delete_confirm_yes.click(
+        fn=confirm_delete_yes,
+        inputs=[_delete_dd_ref, _delete_showval_ref],
+        outputs=[saved_dd, url_input, label_input, status_display, delete_confirm_modal],
+        queue=False,
+    )
+    delete_confirm_no.click(fn=confirm_delete_no, outputs=[delete_confirm_modal], queue=False)
 
     gr.Markdown("---\n*PostgreSQL MCP Autonomous \u2014 Standalone. No subscriptions. Source code available.*")
 
