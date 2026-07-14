@@ -133,6 +133,7 @@ lint.select = [
 
 lint.ignore = [
     "RUF001",  # Ambiguous Unicode character in string (intentional Cyrillic)
+    "RUF003",  # Ambiguous Unicode character in comment (intentional Cyrillic)
 ]
 
 [tool.ruff.format]

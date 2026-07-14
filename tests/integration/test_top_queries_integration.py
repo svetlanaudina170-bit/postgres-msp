@@ -128,8 +128,8 @@ async def test_get_top_queries_integration(local_sql_driver):
         mean_result = await calc.get_top_queries_by_time(limit=10, sort_by="mean")
 
         # Basic verification (bilingual)
-        assert "slowest queries by total execution time" in total_result or "самых медленных запросов по общему времени выполнения" in total_result
-        assert "slowest queries by mean execution time" in mean_result or "самых медленных запросов по среднему времени выполнения" in mean_result
+        assert "slowest queries by total execution time" in total_result or "самых медленных запросов по общему времени" in total_result
+        assert "slowest queries by mean execution time" in mean_result or "самых медленных запросов по среднему времени" in mean_result
 
         # Log results for manual inspection
         logger.info(f"Top queries by total time: {total_result}")
