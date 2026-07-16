@@ -198,6 +198,12 @@ archives/
 devenv.lock
 docs/compose/plans/
 
+# Runtime data
+sql_history.json
+
+# Personal notes
+1.txt
+
 # Legacy files
 server_old on 25.06.2025 12.50.py
 
