@@ -1847,12 +1847,12 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             # --- Direct bindings ---
             saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input, tag_input], queue=False)
             save_btn.click(fn=handle_save_url_edit, inputs=[url_input, label_input, _editing_conn_id, tag_input], outputs=[saved_dd, status_display, _editing_conn_id], queue=False)
-            discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
-            test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display, queue=False)
+            discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector])
+            test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display)
             connect_btn.click(
-                fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False
+                fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn]
             )
-            disconnect_btn.click(fn=handle_disconnect, outputs=[status_display, connect_btn, discover_btn, disconnect_btn], queue=False)
+            disconnect_btn.click(fn=handle_disconnect, outputs=[status_display, connect_btn, discover_btn, disconnect_btn])
             db_selector.change(fn=handle_db_select, inputs=[db_selector, url_input], outputs=url_input, queue=False)
             show_value_cb.change(fn=handle_show_value_toggle, inputs=[show_value_cb, saved_dd], outputs=saved_dd, queue=False)
             show_value_cb.change(fn=lambda v: save_env_file({"SHOW_VALUE": str(v).lower()}) or None, inputs=show_value_cb, outputs=[], queue=False)

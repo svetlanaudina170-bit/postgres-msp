@@ -24,6 +24,7 @@
 
 import logging
 import os
+import socket
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Optional
@@ -32,6 +33,41 @@ from urllib.parse import urlparse
 import asyncpg
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Docker host detection — внутри контейнера localhost не работает для
+# подключения к хостовой БД. Заменяем на host.docker.internal (Docker
+# Desktop) или 172.17.0.1 (Linux bridge), если они доступны.
+# ---------------------------------------------------------------------------
+_DOCKER_HOST_CACHE: Optional[str] = None
+
+
+def _detect_docker_host() -> Optional[str]:
+    """Определить IP/имя хоста Docker для замены localhost в URL БД."""
+    global _DOCKER_HOST_CACHE
+    if _DOCKER_HOST_CACHE is not None:
+        return _DOCKER_HOST_CACHE
+    for candidate in ("host.docker.internal", "172.17.0.1"):
+        try:
+            socket.create_connection((candidate, 1), timeout=0.5).close()
+            _DOCKER_HOST_CACHE = candidate
+            return candidate
+        except (OSError, socket.timeout):
+            continue
+    _DOCKER_HOST_CACHE = ""
+    return None
+
+
+def _maybe_replace_localhost(url: str) -> str:
+    """Если URL содержит localhost и мы в Docker — заменить на хост Docker."""
+    if "://localhost" not in url and "://localhost:" not in url:
+        return url
+    host = _detect_docker_host()
+    if not host:
+        return url
+    replaced = url.replace("://localhost", f"://{host}")
+    logger.info("Docker container detected: replaced localhost with %s in DATABASE_URL", host)
+    return replaced
 
 
 @dataclass
@@ -76,6 +112,7 @@ class PostgresClient:
         }
 
     async def connect(self, url: str) -> Optional[str]:
+        url = _maybe_replace_localhost(url)
         try:
             if self.is_connected:
                 await self.disconnect()
