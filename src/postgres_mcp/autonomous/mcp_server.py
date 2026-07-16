@@ -111,7 +111,12 @@ def _validate_identifier(name: str, label: str = "identifier") -> str:
     return name
 
 
-mcp = FastMCP("postgresql-mcp")
+mcp = FastMCP(
+    "postgresql-mcp",
+    host=MCP_SERVER_HOST,
+    port=MCP_SERVER_PORT,
+    transport_security=None,
+)
 
 pg = None
 
@@ -295,6 +300,199 @@ async def get_top_queries(
     return await pg_client.get_top_queries(limit)
 
 
+@mcp.tool()
+async def analyze_index_performance(
+    schema_name: str = "public",
+    database_url: Optional[str] = None,
+) -> str:
+    """Analyze index usage and find unused/duplicate indexes.
+
+    Args:
+        schema_name: Schema to analyze (default: "public").
+        database_url: Database URL (optional, uses DATABASE_URL from .env if omitted).
+    """
+    pg_client = await get_pg()
+    await _ensure_connected(pg_client, database_url)
+    _validate_identifier(schema_name, "schema_name")
+
+    r = await pg_client.execute_sql(
+        "SELECT schemaname, tablename, indexname, idx_scan, "
+        "pg_size_pretty(pg_relation_size(indexrelid)) AS index_size "
+        f"FROM pg_stat_user_indexes WHERE schemaname = '{schema_name}' "
+        "ORDER BY idx_scan ASC"
+    )
+    if r.error:
+        return f"Error: {r.error}"
+    if not r.rows:
+        return "No index statistics found."
+    lines = ["Index Usage Analysis:",
+             f"{'Table':20} {'Index':30} {'Scans':8} {'Size':10}",
+             "-" * 70]
+    for row in r.rows:
+        lines.append(f"{str(row[1]):20} {str(row[2]):30} {str(row[3]):8} {str(row[4]):10}")
+    lines.append("")
+    lines.append("Note: idx_scan = 0 means the index is never used.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def get_active_queries(
+    database_url: Optional[str] = None,
+) -> str:
+    """List currently running queries and their duration.
+
+    Args:
+        database_url: Database URL (optional, uses DATABASE_URL from .env if omitted).
+    """
+    pg_client = await get_pg()
+    await _ensure_connected(pg_client, database_url)
+    r = await pg_client.execute_sql(
+        "SELECT pid, state, now() - query_start AS duration, "
+        "substring(query, 1, 120) AS query_preview "
+        "FROM pg_stat_activity "
+        "WHERE state != 'idle' AND backend_type = 'client backend' "
+        "ORDER BY query_start DESC"
+    )
+    if r.error:
+        return f"Error: {r.error}"
+    if not r.rows:
+        return "No active queries."
+    lines = ["Active Queries:",
+             f"{'PID':8} {'State':12} {'Duration':12} {'Query'}",
+             "-" * 80]
+    for row in r.rows:
+        lines.append(f"{str(row[0]):8} {str(row[1]):12} {str(row[2]):12} {str(row[3])}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def get_table_sizes(
+    schema_name: str = "public",
+    sort_by: str = "total",
+    database_url: Optional[str] = None,
+) -> str:
+    """Show table sizes including indexes and total.
+
+    Args:
+        schema_name: Schema to analyze (default: "public").
+        sort_by: Sort order — "total", "table", or "indexes" (default: "total").
+        database_url: Database URL (optional, uses DATABASE_URL from .env if omitted).
+    """
+    pg_client = await get_pg()
+    await _ensure_connected(pg_client, database_url)
+    _validate_identifier(schema_name, "schema_name")
+    order_col = {"total": "total", "table": "table", "indexes": "indexes"}.get(sort_by, "total")
+    r = await pg_client.execute_sql(
+        "SELECT schemaname, tablename, "
+        "pg_size_pretty(pg_table_size(schemaname||'.'||tablename)) AS table_size, "
+        "pg_size_pretty(pg_indexes_size(schemaname||'.'||tablename)) AS indexes_size, "
+        "pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS total_size "
+        f"FROM pg_tables WHERE schemaname = '{schema_name}' "
+        f"ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC"
+    )
+    if r.error:
+        return f"Error: {r.error}"
+    if not r.rows:
+        return "No tables found."
+    lines = ["Table Sizes:",
+             f"{'Table':30} {'Table Size':12} {'Indexes':12} {'Total':12}",
+             "-" * 70]
+    for row in r.rows:
+        lines.append(f"{str(row[1]):30} {str(row[2]):12} {str(row[3]):12} {str(row[4]):12}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def get_database_locks(
+    database_url: Optional[str] = None,
+) -> str:
+    """Show current database locks and blocking queries.
+
+    Args:
+        database_url: Database URL (optional, uses DATABASE_URL from .env if omitted).
+    """
+    pg_client = await get_pg()
+    await _ensure_connected(pg_client, database_url)
+    r = await pg_client.execute_sql(
+        "SELECT a.pid, a.state, a.query AS blocked_query, "
+        "b.pid AS blocking_pid, b.query AS blocking_query "
+        "FROM pg_stat_activity a JOIN pg_stat_activity b ON "
+        "a.pid = ANY(pg_blocking_pids(b.pid)) "
+        "WHERE a.state = 'active'"
+    )
+    if r.error:
+        return f"Error: {r.error}"
+    if not r.rows:
+        return "No blocking locks detected."
+    lines = ["Database Locks:",
+             f"{'Blocked PID':12} {'State':10} {'Blocking PID':14} {'Blocked Query':50}",
+             "-" * 90]
+    for row in r.rows:
+        lines.append(f"{str(row[0]):12} {str(row[1]):10} {str(row[2]):14} {str(row[3])[:50]}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def format_sql_query(sql: str) -> str:
+    """Format/beautify a SQL query for readability.
+
+    Args:
+        sql: Raw SQL text to format.
+    """
+    import sqlparse
+    try:
+        return sqlparse.format(sql, reindent=True, keyword_case="upper", use_space_around_operators=True)
+    except Exception as e:
+        return f"Error formatting SQL: {e}\n\n{sql}"
+
+
+@mcp.tool()
+async def get_database_info(
+    database_url: Optional[str] = None,
+) -> str:
+    """Get general database information: version, size, extensions, server settings.
+
+    Args:
+        database_url: Database URL (optional, uses DATABASE_URL from .env if omitted).
+    """
+    pg_client = await get_pg()
+    await _ensure_connected(pg_client, database_url)
+    parts = []
+    # Version
+    r = await pg_client.execute_sql("SELECT version()")
+    if not r.error and r.rows:
+        parts.append(f"Version: {r.rows[0][0]}")
+
+    # Database size
+    r = await pg_client.execute_sql(
+        "SELECT pg_size_pretty(pg_database_size(current_database()))"
+    )
+    if not r.error and r.rows:
+        parts.append(f"Database size: {r.rows[0][0]}")
+
+    # Extensions
+    r = await pg_client.execute_sql(
+        "SELECT string_agg(extname || ' ' || extversion, ', ' ORDER BY extname) "
+        "FROM pg_extension"
+    )
+    if not r.error and r.rows:
+        parts.append(f"Extensions: {r.rows[0][0]}")
+
+    # Connection count
+    r = await pg_client.execute_sql(
+        "SELECT count(*)::int FROM pg_stat_activity WHERE state IS NOT NULL"
+    )
+    if not r.error and r.rows:
+        parts.append(f"Active connections: {r.rows[0][0]}")
+
+    # Uptime
+    r = await pg_client.execute_sql("SELECT pg_postmaster_start_time()")
+    if not r.error and r.rows:
+        parts.append(f"Server started: {r.rows[0][0]}")
+
+    return "\n".join(parts) if parts else "No database info available"
+
+
 if __name__ == "__main__":
     transport = MCP_TRANSPORT
     if "--transport" in sys.argv:
@@ -305,6 +503,6 @@ if __name__ == "__main__":
     logger.info(f"Starting MCP server (FastMCP) — transport={transport}")
 
     if transport in ("sse", "streamable-http"):
-        mcp.run(transport=transport, host=MCP_SERVER_HOST, port=MCP_SERVER_PORT)
+        mcp.run(transport=transport)
     else:
         mcp.run(transport=transport)

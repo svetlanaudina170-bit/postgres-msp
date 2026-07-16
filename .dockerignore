@@ -1,0 +1,26 @@
+.git
+.venv
+__pycache__
+*.pyc
+.mimocode
+.zcode
+.ruff_cache
+.pytest_cache
+.idea
+archives
+Arhive
+Arhives
+*.md
+!README.md
+LICENSE-en
+justfile
+1.txt
+structure.txt
+*.cmd
+# uv.lock НЕ исключаем — нужен для сборки
+devenv*
+smithery*
+docker-compose.yml
+Dockerfile
+Dockerfile-en
+.env

@@ -92,6 +92,7 @@ from .llm_client import LLMResponse
 from .llm_client import build_llm_client_from_connection
 from .llm_client import get_llm_client
 from .pg_client import PostgresClient
+from ..sql_editor import SQLBuilder, stmt_type_choices, template_names, apply_template, get_template_by_name, get_history
 
 # Compute ENV_PATH before load_dotenv so it finds .env regardless of CWD
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -702,14 +703,15 @@ async def handle_disconnect() -> tuple[str, dict, dict, dict]:
     return "Disconnected", *_conn_btns(False)
 
 
-def handle_conn_select(display: str, current_url: str) -> tuple[str, str]:
+def handle_conn_select(display: str, current_url: str) -> tuple[str, str, str]:
     if not display:
-        return current_url, _make_key_from_url(current_url)
+        return current_url, _make_key_from_url(current_url), ""
     key, _ = parse_display(display, show_value=True)
     conn = find_by_key(key)
     if conn:
-        return conn["value"], conn.get("key", conn["value"])
-    return current_url, _make_key_from_url(current_url)
+        tags = conn.get("tags", [])
+        return conn["value"], conn.get("key", conn["value"]), ", ".join(tags)
+    return current_url, _make_key_from_url(current_url), ""
 
 
 def handle_save_url(url: str, key: str) -> tuple[dict, str]:
@@ -945,6 +947,262 @@ def handle_set_default(display: str, show_val: bool) -> tuple[dict, str]:
     conns = set_default(conn["id"])
     save_env_file({"DEFAULT_CONNECTION_KEY": conn["key"]})
     return _rebuild_saved_dd(conns, show_value=show_val, value=_build_label(conn, show_val)), f"\u2b50 Default set: {conn['key']}"
+
+
+# ----------------------------------------------------------------------------
+# SQL Editor handlers (v1.0.0) — конструктор запросов + палитра объектов
+# ----------------------------------------------------------------------------
+
+
+async def _fetch_schemas() -> list[str]:
+    if not pg.is_connected:
+        return []
+    r = await pg.execute_sql(
+        "SELECT schema_name FROM information_schema.schemata "
+        "WHERE schema_name NOT LIKE 'pg_%' AND schema_name != 'information_schema' ORDER BY schema_name"
+    )
+    if r.error or not r.rows:
+        return []
+    return [row[0] for row in r.rows]
+
+
+async def _fetch_tables(schema: str) -> list[str]:
+    if not pg.is_connected or not schema:
+        return []
+    r = await pg.execute_sql(
+        f"SELECT table_name FROM information_schema.tables "
+        f"WHERE table_schema = '{schema}' AND table_type = 'BASE TABLE' ORDER BY table_name"
+    )
+    if r.error or not r.rows:
+        return []
+    return [row[0] for row in r.rows]
+
+
+async def _fetch_columns(schema: str, table: str) -> list[dict]:
+    if not pg.is_connected or not schema or not table:
+        return []
+    r = await pg.execute_sql(
+        f"SELECT column_name, data_type, is_nullable "
+        f"FROM information_schema.columns "
+        f"WHERE table_schema = '{schema}' AND table_name = '{table}' ORDER BY ordinal_position"
+    )
+    if r.error or not r.rows:
+        return []
+    return [{"name": row[0], "type": row[1], "nullable": row[2] == "YES"} for row in r.rows]
+
+
+async def handle_sql_refresh_schemas() -> tuple:
+    """Refresh schemas from connected DB into the object palette."""
+    schemas = await _fetch_schemas()
+    return gr.update(choices=schemas, value=None), gr.update(choices=[], value=None), gr.update(choices=[], value=None), ""
+
+
+async def handle_sql_schema_change(schema: str) -> tuple:
+    """Schema dropdown changed — обновить таблицы."""
+    if not schema:
+        return gr.update(choices=[], value=None), gr.update(choices=[], value=None), ""
+    tables = await _fetch_tables(schema)
+    return gr.update(choices=tables, value=None), gr.update(choices=[], value=None), ""
+
+
+async def handle_sql_table_change(schema: str, table: str, stmt_type: str) -> tuple:
+    """Table changed — обновить колонки и сгенерировать SQL."""
+    if not schema or not table:
+        return gr.update(choices=[], value=None), ""
+    cols = await _fetch_columns(schema, table)
+    col_choices = [f"{c['name']} : {c['type']}" for c in cols]
+    if stmt_type in ("SELECT", "EXPLAIN SELECT"):
+        sql = f"SELECT *\nFROM {schema}.{table}\nLIMIT 100;"
+    elif stmt_type == "INSERT":
+        col_names = [c["name"] for c in cols]
+        cols_part = ", ".join(col_names)
+        vals_part = ", ".join(["?"] * len(col_names))
+        sql = f"INSERT INTO {schema}.{table} ({cols_part})\nVALUES ({vals_part});"
+    elif stmt_type == "UPDATE":
+        sql = f"UPDATE {schema}.{table}\nSET column = value\nWHERE condition;"
+    elif stmt_type == "DELETE":
+        sql = f"DELETE FROM {schema}.{table}\nWHERE condition;"
+    elif stmt_type == "TRUNCATE":
+        sql = f"TRUNCATE TABLE {schema}.{table};"
+    elif stmt_type == "DROP TABLE":
+        sql = f"DROP TABLE IF EXISTS {schema}.{table};"
+    else:
+        sql = f"SELECT *\nFROM {schema}.{table}\nLIMIT 100;"
+    return gr.update(choices=col_choices, value=None), sql
+
+
+def handle_sql_columns_toggle(cols: list[str]) -> str:
+    """Пользователь выбрал колонки — вернуть CSV для справки."""
+    if not cols:
+        return "*"
+    return ", ".join(c.split(" :")[0] for c in cols)
+
+
+async def handle_sql_build(
+    stmt_type: str, schema: str, table: str,
+    columns: list[str], where: str, order_by: str,
+    group_by: str, having: str, limit_val: int,
+    join_type: str, join_table: str, join_on: str,
+    set_clause: str, insert_values: str, distinct: bool,
+) -> str:
+    """Построить SQL из параметров формы."""
+    try:
+        builder = SQLBuilder()
+        builder.set_type(stmt_type)
+        if schema and table:
+            if stmt_type in ("SELECT", "EXPLAIN SELECT"):
+                builder.from_table(schema, table)
+                if columns:
+                    builder.select(*(c.split(" :")[0] for c in columns))
+                else:
+                    builder.select("*")
+                if distinct:
+                    builder.distinct()
+                if where:
+                    builder.where(where)
+                if order_by:
+                    builder.order_by(order_by)
+                if group_by:
+                    builder.group_by(group_by)
+                if having:
+                    builder.having(having)
+                if limit_val and limit_val > 0:
+                    builder.limit(int(limit_val))
+                if join_type and join_type not in ("None", "", None) and join_table and join_on:
+                    builder.add_join(join_type, join_table, join_on)
+            elif stmt_type == "INSERT":
+                builder.insert_into(schema, table)
+                if columns:
+                    builder.insert_columns(*(c.split(" :")[0] for c in columns))
+                if insert_values:
+                    builder.insert_values(insert_values)
+            elif stmt_type == "UPDATE":
+                builder.update_table(schema, table)
+                if set_clause:
+                    builder.set_values(set_clause)
+                if where:
+                    builder.where(where)
+            elif stmt_type == "DELETE":
+                builder.delete_from(schema, table)
+                if where:
+                    builder.where(where)
+            elif stmt_type == "CREATE TABLE":
+                builder.create_table(schema, table, "  id SERIAL PRIMARY KEY,\n  name TEXT,\n  created_at TIMESTAMPTZ DEFAULT now()")
+            elif stmt_type == "DROP TABLE":
+                builder.drop_table(schema, table)
+            elif stmt_type == "TRUNCATE":
+                builder.truncate(schema, table)
+        return builder.build()
+    except Exception as e:
+        return f"-- Error building SQL: {e}"
+
+
+async def handle_sql_execute(sql: str) -> str:
+    """Выполнить SQL из редактора."""
+    if not pg.is_connected:
+        return "Not connected to a database."
+    if not sql.strip():
+        return "Enter a query."
+    r = await pg.execute_sql(sql.strip())
+    # Сохраняем в историю
+    stmt_type = sql.strip().split()[0].upper() if sql.strip() else "SQL"
+    get_history().add(sql.strip(), stmt_type, r.duration_ms, r.row_count, r.error)
+    if r.error:
+        return f"\u274c {r.error}"
+    if r.columns:
+        header = " | ".join(r.columns)
+        sep = "-" * len(header)
+        rows_text = "\n".join(
+            " | ".join(str(c) if c is not None else "NULL" for c in row)
+            for row in r.rows[:SQL_MAX_ROWS_DISPLAY]
+        )
+        extra = f"\n... +{len(r.rows) - SQL_MAX_ROWS_DISPLAY} rows" if len(r.rows) > SQL_MAX_ROWS_DISPLAY else ""
+        return f"\u2705 {r.row_count} rows in {r.duration_ms:.0f}ms\n\n{header}\n{sep}\n{rows_text}{extra}"
+    return f"\u2705 OK. {r.row_count} affected in {r.duration_ms:.0f}ms"
+
+
+async def handle_sql_explain(sql: str) -> str:
+    if not pg.is_connected:
+        return "Not connected"
+    if not sql.strip():
+        return "Enter a query."
+    return await pg.explain_query(sql)
+
+
+def handle_sql_format(sql: str) -> str:
+    """Форматировать SQL через sqlparse."""
+    import sqlparse
+    try:
+        formatted = sqlparse.format(sql, reindent=True, keyword_case="upper", use_space_around_operators=True)
+        return formatted
+    except Exception as e:
+        return f"-- Format error: {e}\n{sql}"
+
+
+async def handle_sql_template(name: str, schema: str, table: str) -> str:
+    t = get_template_by_name(name)
+    if not t:
+        return ""
+    return apply_template(t, schema, table)
+
+
+def handle_stmt_type_ui(stmt_type: str) -> tuple:
+    """Переключить видимость элементов формы в зависимости от типа оператора."""
+    is_select = stmt_type in ("SELECT", "EXPLAIN SELECT")
+    is_insert = stmt_type == "INSERT"
+    is_update = stmt_type == "UPDATE"
+    is_delete = stmt_type == "DELETE"
+    return (
+        gr.update(visible=is_select),   # columns section
+        gr.update(visible=is_select or is_update or is_delete),  # where
+        gr.update(visible=is_select),   # order_by
+        gr.update(visible=is_select),   # group_by
+        gr.update(visible=is_select),   # having
+        gr.update(visible=is_select),   # limit
+        gr.update(visible=is_select),   # joins
+        gr.update(visible=is_select),   # distinct
+        gr.update(visible=is_insert),   # insert_values
+        gr.update(visible=is_update),   # set_clause
+        gr.update(visible=is_delete),   # delete info
+    )
+
+
+async def handle_sql_history_refresh() -> list:
+    entries = get_history().get_recent(20)
+    return [f"{e['timestamp'][:19]} | {e['type']:8} | {e['duration_ms']:>8.0f}ms | {e['sql'][:80]}" for e in entries]
+
+
+async def handle_sql_export_csv(sql: str) -> str | None:
+    """Экспорт результата запроса в CSV."""
+    if not pg.is_connected or not sql.strip():
+        return None
+    r = await pg.execute_sql(sql.strip())
+    if r.error or not r.columns:
+        return None
+    import csv, io, tempfile
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(r.columns)
+    for row in r.rows:
+        w.writerow(row)
+    path = os.path.join(tempfile.gettempdir(), "pg_export.csv")
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(buf.getvalue())
+    return path
+
+
+async def handle_sql_export_json(sql: str) -> str | None:
+    if not pg.is_connected or not sql.strip():
+        return None
+    r = await pg.execute_sql(sql.strip())
+    if r.error or not r.columns:
+        return None
+    import json, tempfile
+    data = [dict(zip(r.columns, row)) for row in r.rows]
+    path = os.path.join(tempfile.gettempdir(), "pg_export.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, default=str)
+    return path
 
 
 async def run_sql(sql: str) -> str:
@@ -1366,6 +1624,20 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
         _delete_dd_ref = gr.Textbox(visible=False)
         _delete_showval_ref = gr.Checkbox(visible=False)
 
+    # --- Change password modal ---
+    with gr.Column(visible=False, elem_id="llm-modal") as pw_change_modal:
+        gr.Markdown("### \U0001f511 Change Connection Password")
+        pw_change_name = gr.Textbox(label="Connection", interactive=False)
+        pw_change_host = gr.Textbox(label="Host", interactive=False)
+        pw_change_new = gr.Textbox(label="New Password", type="password", placeholder="Enter new password")
+        pw_change_confirm = gr.Textbox(label="Confirm Password", type="password", placeholder="Re-enter new password")
+        pw_change_status = gr.Textbox(label="", interactive=False)
+        with gr.Row():
+            pw_change_yes = gr.Button("\U0001f4be Save Password", variant="primary", scale=1)
+            pw_change_no = gr.Button("Cancel", scale=1)
+        _pw_change_dd_ref = gr.Textbox(visible=False)
+        _pw_change_showval_ref = gr.Checkbox(visible=False)
+
     def open_delete_confirm(display: str, show_val: bool) -> tuple:
         conn = _find_from_dd(display, show_val)
         if not conn:
@@ -1388,6 +1660,42 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
 
     def confirm_delete_no() -> dict:
         return gr.update(visible=False)
+
+    def open_pw_change(display: str, show_val: bool) -> tuple:
+        conn = _find_from_dd(display, show_val)
+        if not conn:
+            return gr.update(visible=False), "", "", "", "", display, show_val
+        parsed = _parse_url_parts(conn.get("value", ""))
+        return (
+            gr.update(visible=True),
+            conn.get("key", ""),
+            f"{parsed['host']}:{parsed['port']}",
+            "",
+            "",
+            display,
+            show_val,
+        )
+
+    def confirm_pw_change(dd_val: str, show_val: bool, new_pw: str, confirm_pw: str) -> tuple:
+        if not new_pw:
+            return gr.update(), "\u274c Password cannot be empty"
+        if new_pw != confirm_pw:
+            return gr.update(), "\u274c Passwords do not match"
+        conn = _find_from_dd(dd_val, show_val)
+        if not conn:
+            return gr.update(), "\u274c Connection not found"
+        parsed = _parse_url_parts(conn.get("value", ""))
+        new_url = f"postgresql://{parsed['user']}:{new_pw}@{parsed['host']}:{parsed['port']}/{parsed['database']}"
+        conns = update_connection(conn["id"], new_url)
+        rebuilt = _rebuild_saved_dd(conns, show_value=show_val)
+        return rebuilt, f"\u2705 Password updated for '{conn.get('key', '')}'"
+
+    def confirm_pw_change_and_close(dd_val: str, show_val: bool, new_pw: str, confirm_pw: str):
+        saved_dd_update, msg = confirm_pw_change(dd_val, show_val, new_pw, confirm_pw)
+        return saved_dd_update, msg, gr.update(visible=False), "", ""
+
+    def cancel_pw_change():
+        return gr.update(visible=False), "", "", ""
 
     with gr.Tabs():
         with gr.TabItem("\U0001f50c Connection"):
@@ -1424,6 +1732,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                         "--- ✏️ Edit ---",
                         "\u270f\ufe0f Rename",
                         "\U0001f50d Edit Connection",
+                        "\U0001f511 Change Password",
                         "--- 📦 Import/Export ---",
                         "\U0001f4e4 Export",
                         "\U0001f4e5 Import",
@@ -1492,37 +1801,40 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             # --- Action dispatcher ---
             def _dispatch_conn_action(action: str, display: str, show_val: bool, url: str, label: str, editing_id: str, tags_str: str):
                 """Route dropdown action to the appropriate handler."""
-                # Ignore separator lines and None
                 if action is None or action.startswith("---"):
-                    return [gr.update()] * 11
+                    return [gr.update()] * 14
+                _u = gr.update
+                _14 = [_u()] * 14
                 if action == "\U0001f4cc Pin / Unpin":
                     r = handle_pin_toggle(display, show_val)
-                    return r, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                    return r, _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u()
                 if action == "\u2b50 Set Default":
                     r1, r2 = handle_set_default(display, show_val)
-                    return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                    return r1, _u(), r2, _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u()
                 if action == "\u270f\ufe0f Rename":
                     r1, r2 = handle_rename(display, label, show_val)
-                    return r1, gr.update(), r2, gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                    return r1, _u(), r2, _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u()
                 if action == "\U0001f50d Edit Connection":
                     u, n, eid, t = handle_edit(display, show_val)
-                    return gr.update(), gr.update(), gr.update(), u, n, eid, t, gr.update(), gr.update(), gr.update(), gr.update()
+                    return _u(), _u(), _u(), u, n, eid, t, _u(), _u(), _u(), _u(), _u(), _u(), _u()
+                if action == "\U0001f511 Change Password":
+                    r = open_pw_change(display, show_val)
+                    return _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), r[0], _u(), display, gr.update(value=show_val)
                 if action == "\U0001f4e4 Export":
                     fp, msg = handle_export_connections()
-                    return gr.update(), gr.update(), msg, gr.update(), gr.update(), gr.update(), gr.update(), fp, gr.update(), gr.update(), gr.update()
+                    return _u(), _u(), msg, _u(), _u(), _u(), _u(), fp, _u(), _u(), _u(), _u(), _u(), _u()
                 if action == "\U0001f4e5 Import":
-                    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(True)
+                    return _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(True)
                 if action == "\U0001f5d1 Delete":
-                    # Open delete confirmation modal
                     r = open_delete_confirm(display, show_val)
-                    return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), r[0], gr.update(), gr.update()
-                return [gr.update()] * 11
+                    return _u(), _u(), _u(), _u(), _u(), _u(), _u(), _u(), r[0], _u(), _u(), display, _u(), gr.update(value=show_val)
+                return _14
 
-            # Outputs: saved_dd, status_display, (unused), url_input, label_input, _editing_conn_id, tag_input, export_file, import_file, delete_confirm_modal, (unused)
+            # Outputs: saved_dd, status_display, status_display, url_input, label_input, _editing_conn_id, tag_input, export_file, import_file, delete_confirm_modal, pw_change_modal, _delete_dd_ref, _pw_change_dd_ref, _pw_change_showval_ref
             conn_action_dd.change(
                 fn=_dispatch_conn_action,
                 inputs=[conn_action_dd, saved_dd, show_value_cb, url_input, label_input, _editing_conn_id, tag_input],
-                outputs=[saved_dd, status_display, status_display, url_input, label_input, _editing_conn_id, tag_input, gr.File(visible=False), import_file, delete_confirm_modal, _delete_dd_ref],
+                outputs=[saved_dd, status_display, status_display, url_input, label_input, _editing_conn_id, tag_input, gr.File(visible=False), import_file, delete_confirm_modal, pw_change_modal, _delete_dd_ref, _pw_change_dd_ref, _pw_change_showval_ref],
                 queue=False,
             )
 
@@ -1533,7 +1845,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             tag_filter_dd.change(fn=handle_tag_filter, inputs=[tag_filter_dd, show_value_cb], outputs=[saved_dd], queue=False)
 
             # --- Direct bindings ---
-            saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input], queue=False)
+            saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input, tag_input], queue=False)
             save_btn.click(fn=handle_save_url_edit, inputs=[url_input, label_input, _editing_conn_id, tag_input], outputs=[saved_dd, status_display, _editing_conn_id], queue=False)
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector], queue=False)
             test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display, queue=False)
@@ -1585,17 +1897,139 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             # Привязка объявлена ниже, после создания модала.
 
         with gr.TabItem("\U0001f4dd SQL Editor"):
+            # --- Top toolbar: stmt type + actions ---
             with gr.Row():
-                with gr.Column(scale=3):
-                    sql_input = gr.Textbox(label="SQL Query", placeholder="SELECT * FROM ...", lines=6)
-                    sql_result = gr.Textbox(label="Result", interactive=False, lines=15)
-                    with gr.Row():
-                        gr.Button("\u25b6 Run", variant="primary").click(fn=run_sql, inputs=sql_input, outputs=sql_result)
-                        gr.Button("\U0001f52c Explain").click(fn=run_sql_explain, inputs=sql_input, outputs=sql_result)
-                        gr.Button("Clear").click(fn=lambda: ("", ""), outputs=[sql_input, sql_result])
+                sql_stmt_type = gr.Dropdown(
+                    choices=stmt_type_choices(), value="SELECT", label="Statement type", scale=1, interactive=True,
+                )
+                _sql_run_btn = gr.Button("Run", variant="primary", scale=1)
+                _sql_explain_btn = gr.Button("Explain", scale=1)
+                _sql_format_btn = gr.Button("Format", scale=1)
+                _sql_clear_btn = gr.Button("Clear", scale=1)
+            # --- Main area: object palette (left) + editor+results (right) ---
+            with gr.Row():
+                # --- Left: Object palette + builder controls ---
                 with gr.Column(scale=2):
-                    schema_display = gr.Textbox(label="Schema", interactive=False, lines=15)
-                    gr.Button("\U0001f504 Refresh Schema", size="sm").click(fn=get_schema_display, outputs=schema_display)
+                    with gr.Row():
+                        sql_schema_dd = gr.Dropdown(
+                            choices=[], label="Schema", interactive=True, scale=3, allow_custom_value=True,
+                        )
+                        _sql_refresh_schemas_btn = gr.Button("\U0001f504", size="sm", scale=1, min_width=40)
+                    sql_table_dd = gr.Dropdown(choices=[], label="Table", interactive=True, allow_custom_value=True)
+                    with gr.Accordion("Columns", open=True) as sql_cols_section:
+                        sql_cols_cb = gr.CheckboxGroup(choices=[], label="", interactive=True)
+                    with gr.Accordion("Filters & Sorting", open=True):
+                        with gr.Row():
+                            sql_distinct_cb = gr.Checkbox(label="DISTINCT", visible=True)
+                        with gr.Column(visible=True) as sql_where_section:
+                            sql_where_tb = gr.Textbox(label="WHERE", placeholder="age > 18", lines=1)
+                        with gr.Column(visible=True) as sql_order_section:
+                            sql_order_tb = gr.Textbox(label="ORDER BY", placeholder="name ASC", lines=1)
+                        with gr.Column(visible=True) as sql_group_section:
+                            sql_group_tb = gr.Textbox(label="GROUP BY", placeholder="department", lines=1)
+                        with gr.Column(visible=True) as sql_having_section:
+                            sql_having_tb = gr.Textbox(label="HAVING", placeholder="count(*) > 5", lines=1)
+                        with gr.Column(visible=True) as sql_limit_section:
+                            sql_limit_nb = gr.Number(label="LIMIT", value=100, minimum=0, precision=0)
+                    with gr.Accordion("Joins", open=False) as sql_joins_section:
+                        with gr.Row():
+                            sql_join_type = gr.Dropdown(
+                                choices=["None", "INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN", "CROSS JOIN"],
+                                value="None", label="Type", scale=1,
+                            )
+                            sql_join_table = gr.Textbox(label="Table", placeholder="other_table", scale=1)
+                        sql_join_on = gr.Textbox(label="ON", placeholder="users.id = orders.user_id", lines=1)
+                    with gr.Column(visible=False) as sql_insert_section:
+                        sql_insert_vals = gr.Textbox(label="VALUES", lines=2)
+                    with gr.Column(visible=False) as sql_update_section:
+                        sql_set_tb = gr.Textbox(label="SET", placeholder="name = 'NewName'", lines=2)
+                    with gr.Column(visible=False) as sql_delete_info:
+                        gr.Markdown("_DELETE removes rows matching WHERE_")
+                    with gr.Accordion("Templates", open=False):
+                        sql_template_dd = gr.Dropdown(choices=template_names(), label="", interactive=True)
+                        _sql_template_apply_btn = gr.Button("Apply Template", size="sm")
+                # --- Right: SQL editor + results ---
+                with gr.Column(scale=3):
+                    sql_editor = gr.Textbox(
+                        label="SQL Editor",
+                        placeholder="Select schema/table and configure filters above, or type SQL directly...",
+                        lines=8,
+                    )
+                    _sql_result = gr.Textbox(label="Result", interactive=False, lines=12)
+                    with gr.Row():
+                        _sql_export_csv = gr.Button("Export CSV", size="sm")
+                        _sql_export_json = gr.Button("Export JSON", size="sm")
+                        _sql_export_file = gr.File(label="Download", visible=False)
+            # --- History ---
+            with gr.Row():
+                with gr.Column():
+                    with gr.Accordion("History", open=False):
+                        sql_history_dd = gr.Dropdown(choices=[], label="Recent queries (click to restore)", interactive=True)
+                        _sql_history_refresh_btn = gr.Button("Refresh History", size="sm")
+            # --- Event wiring ---
+            # Refresh schemas from current DB connection
+            _sql_refresh_schemas_btn.click(
+                fn=handle_sql_refresh_schemas,
+                outputs=[sql_schema_dd, sql_table_dd, sql_cols_cb, sql_editor],
+            )
+            # Schema/table/column browsing
+            sql_schema_dd.change(
+                fn=handle_sql_schema_change,
+                inputs=sql_schema_dd,
+                outputs=[sql_table_dd, sql_cols_cb, sql_editor],
+            )
+            sql_table_dd.change(
+                fn=handle_sql_table_change,
+                inputs=[sql_schema_dd, sql_table_dd, sql_stmt_type],
+                outputs=[sql_cols_cb, sql_editor],
+            )
+            # Rebuild SQL when any builder control changes
+            _sql_builder_inputs = [
+                sql_stmt_type, sql_schema_dd, sql_table_dd, sql_cols_cb,
+                sql_where_tb, sql_order_tb, sql_group_tb, sql_having_tb,
+                sql_limit_nb, sql_join_type, sql_join_table, sql_join_on,
+                sql_set_tb, sql_insert_vals, sql_distinct_cb,
+            ]
+            async def _rebuild_sql(*args):
+                """Guard-обёртка: не перестраиваем SQL пока не выбраны schema/table."""
+                if not args[1] or not args[2]:  # schema or table empty
+                    return ""
+                return await handle_sql_build(*args)
+
+            for ctrl in [sql_stmt_type, sql_cols_cb, sql_where_tb, sql_order_tb,
+                         sql_group_tb, sql_having_tb, sql_limit_nb, sql_join_type,
+                         sql_join_table, sql_join_on, sql_set_tb, sql_insert_vals,
+                         sql_distinct_cb]:
+                ctrl.change(fn=_rebuild_sql, inputs=_sql_builder_inputs, outputs=sql_editor)
+            # Stmt type change → toggle UI sections
+            sql_stmt_type.change(fn=handle_stmt_type_ui, inputs=sql_stmt_type, outputs=[
+                sql_cols_section, sql_where_section, sql_order_section,
+                sql_group_section, sql_having_section, sql_limit_section,
+                sql_joins_section, sql_distinct_cb, sql_insert_section,
+                sql_update_section, sql_delete_info,
+            ])
+            # Column selection updates SQL (auto-built via _rebuild_sql)
+            # Action buttons
+            _sql_run_btn.click(fn=handle_sql_execute, inputs=sql_editor, outputs=_sql_result)
+            _sql_explain_btn.click(fn=handle_sql_explain, inputs=sql_editor, outputs=_sql_result)
+            _sql_format_btn.click(fn=handle_sql_format, inputs=sql_editor, outputs=sql_editor)
+            _sql_clear_btn.click(fn=lambda: ("", ""), outputs=[sql_editor, _sql_result])
+            # Templates
+            _sql_template_apply_btn.click(
+                fn=handle_sql_template,
+                inputs=[sql_template_dd, sql_schema_dd, sql_table_dd],
+                outputs=sql_editor,
+            )
+            # History
+            _sql_history_refresh_btn.click(fn=handle_sql_history_refresh, outputs=sql_history_dd)
+            sql_history_dd.change(
+                fn=lambda h: h.split(" | ")[-1].strip() if " | " in (h or "") else "",
+                inputs=sql_history_dd,
+                outputs=sql_editor,
+            )
+            # Export
+            _sql_export_csv.click(fn=handle_sql_export_csv, inputs=sql_editor, outputs=_sql_export_file)
+            _sql_export_json.click(fn=handle_sql_export_json, inputs=sql_editor, outputs=_sql_export_file)
 
         with gr.TabItem("\U0001f4ca Schema"):
             schema_output = gr.Textbox(label="Full Schema", interactive=False, lines=30)
@@ -1817,6 +2251,15 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
         queue=False,
     )
     delete_confirm_no.click(fn=confirm_delete_no, outputs=[delete_confirm_modal], queue=False)
+
+    # Password change confirmation
+    pw_change_yes.click(
+        fn=confirm_pw_change_and_close,
+        inputs=[_pw_change_dd_ref, _pw_change_showval_ref, pw_change_new, pw_change_confirm],
+        outputs=[saved_dd, pw_change_status, pw_change_modal, pw_change_new, pw_change_confirm],
+        queue=False,
+    )
+    pw_change_no.click(fn=cancel_pw_change, outputs=[pw_change_modal, pw_change_new, pw_change_confirm, pw_change_status], queue=False)
 
     gr.Markdown("---\n*PostgreSQL MCP Autonomous \u2014 Standalone. No subscriptions. Source code available.*")
 
