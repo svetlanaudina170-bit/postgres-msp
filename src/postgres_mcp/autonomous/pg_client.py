@@ -42,20 +42,36 @@ logger = logging.getLogger(__name__)
 _DOCKER_HOST_CACHE: Optional[str] = None
 
 
+def _in_docker() -> bool:
+    """Проверить, запущены ли мы внутри Docker-контейнера."""
+    if os.path.exists("/.dockerenv"):
+        return True
+    try:
+        with open("/proc/1/cgroup") as f:
+            return "docker" in f.read() or "containerd" in f.read()
+    except (FileNotFoundError, OSError):
+        pass
+    return False
+
+
 def _detect_docker_host() -> Optional[str]:
     """Определить IP/имя хоста Docker для замены localhost в URL БД."""
     global _DOCKER_HOST_CACHE
     if _DOCKER_HOST_CACHE is not None:
         return _DOCKER_HOST_CACHE
-    for candidate in ("host.docker.internal", "172.17.0.1"):
-        try:
-            socket.create_connection((candidate, 1), timeout=0.5).close()
-            _DOCKER_HOST_CACHE = candidate
-            return candidate
-        except (OSError, socket.timeout):
-            continue
-    _DOCKER_HOST_CACHE = ""
-    return None
+    if not _in_docker():
+        _DOCKER_HOST_CACHE = ""
+        return None
+    # Проверяем DNS: host.docker.internal (Docker Desktop / WSL2)
+    try:
+        socket.gethostbyname("host.docker.internal")
+        _DOCKER_HOST_CACHE = "host.docker.internal"
+        return _DOCKER_HOST_CACHE
+    except OSError:
+        pass
+    # Fallback: стандартный bridge Docker
+    _DOCKER_HOST_CACHE = "172.17.0.1"
+    return _DOCKER_HOST_CACHE
 
 
 def _maybe_replace_localhost(url: str) -> str:

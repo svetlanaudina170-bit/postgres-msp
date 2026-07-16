@@ -64,6 +64,12 @@ import gradio as gr
 import yaml
 from dotenv import load_dotenv
 
+from ..sql_editor import SQLBuilder
+from ..sql_editor import apply_template
+from ..sql_editor import get_history
+from ..sql_editor import get_template_by_name
+from ..sql_editor import stmt_type_choices
+from ..sql_editor import template_names
 from . import llm_connection_store as llm_conn_store
 from .connection_store import _make_key_from_url
 from .connection_store import _mask_password
@@ -75,24 +81,23 @@ from .connection_store import delete_connection
 from .connection_store import find_by_key
 from .connection_store import find_by_key_and_masked_value
 from .connection_store import find_by_value
+from .connection_store import get_all_tags
 from .connection_store import get_default
 from .connection_store import is_key_taken
 from .connection_store import load_connections
 from .connection_store import match_by_server
 from .connection_store import match_existing
 from .connection_store import parse_display
+from .connection_store import set_connection_tags
 from .connection_store import set_default
 from .connection_store import toggle_pin
-from .connection_store import update_key
 from .connection_store import update_connection
-from .connection_store import get_all_tags
-from .connection_store import set_connection_tags
+from .connection_store import update_key
 from .llm_client import LLMClient
 from .llm_client import LLMResponse
 from .llm_client import build_llm_client_from_connection
 from .llm_client import get_llm_client
 from .pg_client import PostgresClient
-from ..sql_editor import SQLBuilder, stmt_type_choices, template_names, apply_template, get_template_by_name, get_history
 
 # Compute ENV_PATH before load_dotenv so it finds .env regardless of CWD
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -117,6 +122,7 @@ SHOW_VAL = os.getenv("SHOW_VALUE", "false").lower() == "true"
 CHAT_MAX_TOOL_ITERATIONS = int(os.getenv("CHAT_MAX_TOOL_ITERATIONS", "5"))
 CHAT_TOOL_RESULT_TRUNCATE = int(os.getenv("CHAT_TOOL_RESULT_TRUNCATE", "1000"))
 SQL_MAX_ROWS_DISPLAY = int(os.getenv("SQL_MAX_ROWS_DISPLAY", "100"))
+AUTO_CONNECT_DIALOG = os.getenv("AUTO_CONNECT_DIALOG", "true").lower() == "true"
 LLM_TEMP_MIN = float(os.getenv("LLM_TEMP_MIN", "0"))
 LLM_TEMP_MAX = float(os.getenv("LLM_TEMP_MAX", "2"))
 LLM_TEMP_STEP = float(os.getenv("LLM_TEMP_STEP", "0.05"))
@@ -595,12 +601,14 @@ def _load_ui_settings() -> dict:
 
 def handle_save_ui_settings(show_tag_filter: bool, show_track_changes: bool, show_connection_actions: bool, show_status_section: bool) -> str:
     """Save UI settings to .env."""
-    save_env_file({
-        "UI_SHOW_TAG_FILTER": str(show_tag_filter).lower(),
-        "UI_SHOW_TRACK_CHANGES": str(show_track_changes).lower(),
-        "UI_SHOW_CONNECTION_ACTIONS": str(show_connection_actions).lower(),
-        "UI_SHOW_STATUS_SECTION": str(show_status_section).lower(),
-    })
+    save_env_file(
+        {
+            "UI_SHOW_TAG_FILTER": str(show_tag_filter).lower(),
+            "UI_SHOW_TRACK_CHANGES": str(show_track_changes).lower(),
+            "UI_SHOW_CONNECTION_ACTIONS": str(show_connection_actions).lower(),
+            "UI_SHOW_STATUS_SECTION": str(show_status_section).lower(),
+        }
+    )
     return "\u2705 Settings saved"
 
 
@@ -665,20 +673,27 @@ async def handle_discover(url: str) -> tuple[str, dict]:
     selected = f"\u2705 {current_db}" if current_db in db_names else None
     return (
         f"\U0001f4e6 Found {len(dbs)} databases:\n" + "\n".join(f"  \u2022 `{d['name']}`" for d in dbs),
-        gr.update(choices=choices_with_check, value=selected)
+        gr.update(choices=choices_with_check, value=selected),
     )
 
 
-def handle_db_select(db_name: str, current_url: str) -> str:
+def handle_db_select(db_name: str, current_url: str) -> tuple:
+    """Handle database selection from the dropdown.
+
+    Returns: (updated_url, modal_visibility, pending_url, pending_db, info_text)
+    """
     if not db_name:
-        return current_url
-    # Strip checkmark prefix if present
+        return current_url, gr.update(visible=False), "", "", gr.update()
     if db_name.startswith("\u2705 "):
         db_name = db_name[2:]
     idx = current_url.rfind("/")
-    if idx > 8:
-        return current_url[: idx + 1] + db_name
-    return current_url
+    new_url = current_url[: idx + 1] + db_name if idx > 8 else current_url
+
+    if AUTO_CONNECT_DIALOG:
+        info = f"**Database:** `{db_name}`\n**URL:** `{new_url}`"
+        return new_url, gr.update(visible=True), new_url, db_name, info
+
+    return new_url, gr.update(visible=False), "", "", gr.update()
 
 
 async def handle_connect(url: str, selected_db: str) -> tuple[str, dict, dict, dict]:
@@ -816,6 +831,7 @@ async def handle_test_connection(url: str) -> str:
     target = url.strip()
     # Create a temporary pg client for testing
     from .pg_client import PostgresClient
+
     test_pg = PostgresClient()
     err = await test_pg.connect(target)
     if err:
@@ -830,8 +846,8 @@ async def handle_test_connection(url: str) -> str:
 
 def handle_export_connections() -> tuple:
     """Export connections to a JSON file for download."""
-    import tempfile
     import json
+    import tempfile
     from datetime import datetime
 
     conns = load_connections()
@@ -844,13 +860,15 @@ def handle_export_connections() -> tuple:
         url = c.get("value", "")
         # Mask password in URL for security
         masked_url = _mask_password(url) if url else ""
-        export_data.append({
-            "name": c.get("key", ""),
-            "url": masked_url,
-            "pinned": c.get("pinned", False),
-            "default": c.get("default", False),
-            "tags": c.get("tags", []),
-        })
+        export_data.append(
+            {
+                "name": c.get("key", ""),
+                "url": masked_url,
+                "pinned": c.get("pinned", False),
+                "default": c.get("default", False),
+                "tags": c.get("tags", []),
+            }
+        )
 
     # Create temp file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -871,7 +889,7 @@ def handle_import_connections(file) -> tuple[dict, str]:
         return gr.update(), "\u26a0\ufe0f No file selected"
 
     try:
-        with open(file.name, "r", encoding="utf-8") as f:
+        with open(file.name, encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:
         return gr.update(), f"\u274c Failed to read file: {e}"
@@ -970,8 +988,7 @@ async def _fetch_tables(schema: str) -> list[str]:
     if not pg.is_connected or not schema:
         return []
     r = await pg.execute_sql(
-        f"SELECT table_name FROM information_schema.tables "
-        f"WHERE table_schema = '{schema}' AND table_type = 'BASE TABLE' ORDER BY table_name"
+        f"SELECT table_name FROM information_schema.tables WHERE table_schema = '{schema}' AND table_type = 'BASE TABLE' ORDER BY table_name"
     )
     if r.error or not r.rows:
         return []
@@ -1039,11 +1056,21 @@ def handle_sql_columns_toggle(cols: list[str]) -> str:
 
 
 async def handle_sql_build(
-    stmt_type: str, schema: str, table: str,
-    columns: list[str], where: str, order_by: str,
-    group_by: str, having: str, limit_val: int,
-    join_type: str, join_table: str, join_on: str,
-    set_clause: str, insert_values: str, distinct: bool,
+    stmt_type: str,
+    schema: str,
+    table: str,
+    columns: list[str],
+    where: str,
+    order_by: str,
+    group_by: str,
+    having: str,
+    limit_val: int,
+    join_type: str,
+    join_table: str,
+    join_on: str,
+    set_clause: str,
+    insert_values: str,
+    distinct: bool,
 ) -> str:
     """Построить SQL из параметров формы."""
     try:
@@ -1112,10 +1139,7 @@ async def handle_sql_execute(sql: str) -> str:
     if r.columns:
         header = " | ".join(r.columns)
         sep = "-" * len(header)
-        rows_text = "\n".join(
-            " | ".join(str(c) if c is not None else "NULL" for c in row)
-            for row in r.rows[:SQL_MAX_ROWS_DISPLAY]
-        )
+        rows_text = "\n".join(" | ".join(str(c) if c is not None else "NULL" for c in row) for row in r.rows[:SQL_MAX_ROWS_DISPLAY])
         extra = f"\n... +{len(r.rows) - SQL_MAX_ROWS_DISPLAY} rows" if len(r.rows) > SQL_MAX_ROWS_DISPLAY else ""
         return f"\u2705 {r.row_count} rows in {r.duration_ms:.0f}ms\n\n{header}\n{sep}\n{rows_text}{extra}"
     return f"\u2705 OK. {r.row_count} affected in {r.duration_ms:.0f}ms"
@@ -1132,6 +1156,7 @@ async def handle_sql_explain(sql: str) -> str:
 def handle_sql_format(sql: str) -> str:
     """Форматировать SQL через sqlparse."""
     import sqlparse
+
     try:
         formatted = sqlparse.format(sql, reindent=True, keyword_case="upper", use_space_around_operators=True)
         return formatted
@@ -1153,17 +1178,17 @@ def handle_stmt_type_ui(stmt_type: str) -> tuple:
     is_update = stmt_type == "UPDATE"
     is_delete = stmt_type == "DELETE"
     return (
-        gr.update(visible=is_select),   # columns section
+        gr.update(visible=is_select),  # columns section
         gr.update(visible=is_select or is_update or is_delete),  # where
-        gr.update(visible=is_select),   # order_by
-        gr.update(visible=is_select),   # group_by
-        gr.update(visible=is_select),   # having
-        gr.update(visible=is_select),   # limit
-        gr.update(visible=is_select),   # joins
-        gr.update(visible=is_select),   # distinct
-        gr.update(visible=is_insert),   # insert_values
-        gr.update(visible=is_update),   # set_clause
-        gr.update(visible=is_delete),   # delete info
+        gr.update(visible=is_select),  # order_by
+        gr.update(visible=is_select),  # group_by
+        gr.update(visible=is_select),  # having
+        gr.update(visible=is_select),  # limit
+        gr.update(visible=is_select),  # joins
+        gr.update(visible=is_select),  # distinct
+        gr.update(visible=is_insert),  # insert_values
+        gr.update(visible=is_update),  # set_clause
+        gr.update(visible=is_delete),  # delete info
     )
 
 
@@ -1179,7 +1204,10 @@ async def handle_sql_export_csv(sql: str) -> str | None:
     r = await pg.execute_sql(sql.strip())
     if r.error or not r.columns:
         return None
-    import csv, io, tempfile
+    import csv
+    import io
+    import tempfile
+
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(r.columns)
@@ -1197,7 +1225,9 @@ async def handle_sql_export_json(sql: str) -> str | None:
     r = await pg.execute_sql(sql.strip())
     if r.error or not r.columns:
         return None
-    import json, tempfile
+    import json
+    import tempfile
+
     data = [dict(zip(r.columns, row)) for row in r.rows]
     path = os.path.join(tempfile.gettempdir(), "pg_export.json")
     with open(path, "w", encoding="utf-8") as f:
@@ -1516,7 +1546,12 @@ def save_connection(
 
     logger.info(
         "save_connection: name=%s, mode=%s, provider=%s, conn_type=%s, model=%s, conn_id=%s",
-        name, mode, provider, conn_type, model, conn_id or "(new)",
+        name,
+        mode,
+        provider,
+        conn_type,
+        model,
+        conn_id or "(new)",
     )
 
     if conn_id:
@@ -1589,6 +1624,7 @@ llm_conn_store.log_encryption_status()
 
 # Auto-connect to DATABASE_URL on startup if set
 import asyncio as _asyncio
+
 _initial_status = ""
 if db_url:
     try:
@@ -1637,6 +1673,16 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             pw_change_no = gr.Button("Cancel", scale=1)
         _pw_change_dd_ref = gr.Textbox(visible=False)
         _pw_change_showval_ref = gr.Checkbox(visible=False)
+
+    # --- Connect confirmation modal (auto-connect dialog) ---
+    with gr.Column(visible=False, elem_id="llm-modal") as connect_confirm_modal:
+        gr.Markdown("### \U0001f50c Connect to Database?")
+        connect_confirm_info = gr.Markdown("")
+        with gr.Row():
+            connect_confirm_yes = gr.Button("\U0001f50c Connect", variant="primary", scale=1)
+            connect_confirm_no = gr.Button("Cancel", scale=1)
+        _connect_pending_url = gr.Textbox(visible=False)
+        _connect_pending_db = gr.Textbox(visible=False)
 
     def open_delete_confirm(display: str, show_val: bool) -> tuple:
         conn = _find_from_dd(display, show_val)
@@ -1696,6 +1742,16 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
 
     def cancel_pw_change():
         return gr.update(visible=False), "", "", ""
+
+    # --- Connect confirmation handlers ---
+    async def confirm_auto_connect(pending_url: str, pending_db: str) -> tuple:
+        if not pending_url or not pending_db:
+            return gr.update(visible=False), "No database selected", *_conn_btns(pg.is_connected)
+        result = await handle_connect(pending_url, pending_db)
+        return gr.update(visible=False), *result
+
+    def cancel_auto_connect() -> tuple:
+        return gr.update(visible=False), "", *_conn_btns(pg.is_connected)
 
     with gr.Tabs():
         with gr.TabItem("\U0001f50c Connection"):
@@ -1792,8 +1848,12 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 gr.Markdown("Show or hide sections in the Connection tab. Settings are saved to .env.")
                 with gr.Row():
                     settings_show_tag_filter = gr.Checkbox(label="\U0001f3f7\ufe0f Show Tag Filter", value=_ui_settings["show_tag_filter"], scale=1)
-                    settings_show_track_changes = gr.Checkbox(label="\U0001f4dd Show Track Changes", value=_ui_settings["show_track_changes"], scale=1)
-                    settings_show_conn_actions = gr.Checkbox(label="\U0001f50c Show Connection Actions", value=_ui_settings["show_connection_actions"], scale=1)
+                    settings_show_track_changes = gr.Checkbox(
+                        label="\U0001f4dd Show Track Changes", value=_ui_settings["show_track_changes"], scale=1
+                    )
+                    settings_show_conn_actions = gr.Checkbox(
+                        label="\U0001f50c Show Connection Actions", value=_ui_settings["show_connection_actions"], scale=1
+                    )
                     settings_show_status = gr.Checkbox(label="\U0001f4ca Show Status Section", value=_ui_settings["show_status_section"], scale=1)
                 settings_save_btn = gr.Button("\U0001f4be Save Settings", variant="primary")
                 settings_status = gr.Textbox(label="", interactive=False)
@@ -1834,7 +1894,22 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             conn_action_dd.change(
                 fn=_dispatch_conn_action,
                 inputs=[conn_action_dd, saved_dd, show_value_cb, url_input, label_input, _editing_conn_id, tag_input],
-                outputs=[saved_dd, status_display, status_display, url_input, label_input, _editing_conn_id, tag_input, gr.File(visible=False), import_file, delete_confirm_modal, pw_change_modal, _delete_dd_ref, _pw_change_dd_ref, _pw_change_showval_ref],
+                outputs=[
+                    saved_dd,
+                    status_display,
+                    status_display,
+                    url_input,
+                    label_input,
+                    _editing_conn_id,
+                    tag_input,
+                    gr.File(visible=False),
+                    import_file,
+                    delete_confirm_modal,
+                    pw_change_modal,
+                    _delete_dd_ref,
+                    _pw_change_dd_ref,
+                    _pw_change_showval_ref,
+                ],
                 queue=False,
             )
 
@@ -1846,14 +1921,21 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
 
             # --- Direct bindings ---
             saved_dd.select(fn=handle_conn_select, inputs=[saved_dd, url_input], outputs=[url_input, label_input, tag_input], queue=False)
-            save_btn.click(fn=handle_save_url_edit, inputs=[url_input, label_input, _editing_conn_id, tag_input], outputs=[saved_dd, status_display, _editing_conn_id], queue=False)
+            save_btn.click(
+                fn=handle_save_url_edit,
+                inputs=[url_input, label_input, _editing_conn_id, tag_input],
+                outputs=[saved_dd, status_display, _editing_conn_id],
+                queue=False,
+            )
             discover_btn.click(fn=handle_discover, inputs=url_input, outputs=[status_display, db_selector])
             test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display)
-            connect_btn.click(
-                fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn]
-            )
+            connect_btn.click(fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn])
             disconnect_btn.click(fn=handle_disconnect, outputs=[status_display, connect_btn, discover_btn, disconnect_btn])
-            db_selector.change(fn=handle_db_select, inputs=[db_selector, url_input], outputs=url_input, queue=False)
+            db_selector.change(
+                fn=handle_db_select,
+                inputs=[db_selector, url_input],
+                outputs=[url_input, connect_confirm_modal, _connect_pending_url, _connect_pending_db, connect_confirm_info],
+            )
             show_value_cb.change(fn=handle_show_value_toggle, inputs=[show_value_cb, saved_dd], outputs=saved_dd, queue=False)
             show_value_cb.change(fn=lambda v: save_env_file({"SHOW_VALUE": str(v).lower()}) or None, inputs=show_value_cb, outputs=[], queue=False)
             track_cb.change(fn=lambda v: save_env_file({"TRACK_CHANGES": str(v).lower()}) or None, inputs=track_cb, outputs=[], queue=False)
@@ -1868,10 +1950,10 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             # Apply settings on save - toggle visibility
             settings_save_btn.click(
                 fn=lambda st, sst, sca, ss: (
-                    gr.update(visible=st),   # tag_filter_dd
+                    gr.update(visible=st),  # tag_filter_dd
                     gr.update(visible=sst),  # track_cb
                     gr.update(visible=sca),  # actions_section
-                    gr.update(visible=ss),   # status_section
+                    gr.update(visible=ss),  # status_section
                 ),
                 inputs=[settings_show_tag_filter, settings_show_track_changes, settings_show_conn_actions, settings_show_status],
                 outputs=[tag_filter_dd, track_cb, actions_section, status_section],
@@ -1900,7 +1982,11 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             # --- Top toolbar: stmt type + actions ---
             with gr.Row():
                 sql_stmt_type = gr.Dropdown(
-                    choices=stmt_type_choices(), value="SELECT", label="Statement type", scale=1, interactive=True,
+                    choices=stmt_type_choices(),
+                    value="SELECT",
+                    label="Statement type",
+                    scale=1,
+                    interactive=True,
                 )
                 _sql_run_btn = gr.Button("Run", variant="primary", scale=1)
                 _sql_explain_btn = gr.Button("Explain", scale=1)
@@ -1912,7 +1998,11 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                 with gr.Column(scale=2):
                     with gr.Row():
                         sql_schema_dd = gr.Dropdown(
-                            choices=[], label="Schema", interactive=True, scale=3, allow_custom_value=True,
+                            choices=[],
+                            label="Schema",
+                            interactive=True,
+                            scale=3,
+                            allow_custom_value=True,
                         )
                         _sql_refresh_schemas_btn = gr.Button("\U0001f504", size="sm", scale=1, min_width=40)
                     sql_table_dd = gr.Dropdown(choices=[], label="Table", interactive=True, allow_custom_value=True)
@@ -1935,7 +2025,9 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                         with gr.Row():
                             sql_join_type = gr.Dropdown(
                                 choices=["None", "INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL JOIN", "CROSS JOIN"],
-                                value="None", label="Type", scale=1,
+                                value="None",
+                                label="Type",
+                                scale=1,
                             )
                             sql_join_table = gr.Textbox(label="Table", placeholder="other_table", scale=1)
                         sql_join_on = gr.Textbox(label="ON", placeholder="users.id = orders.user_id", lines=1)
@@ -1985,29 +2077,63 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             )
             # Rebuild SQL when any builder control changes
             _sql_builder_inputs = [
-                sql_stmt_type, sql_schema_dd, sql_table_dd, sql_cols_cb,
-                sql_where_tb, sql_order_tb, sql_group_tb, sql_having_tb,
-                sql_limit_nb, sql_join_type, sql_join_table, sql_join_on,
-                sql_set_tb, sql_insert_vals, sql_distinct_cb,
+                sql_stmt_type,
+                sql_schema_dd,
+                sql_table_dd,
+                sql_cols_cb,
+                sql_where_tb,
+                sql_order_tb,
+                sql_group_tb,
+                sql_having_tb,
+                sql_limit_nb,
+                sql_join_type,
+                sql_join_table,
+                sql_join_on,
+                sql_set_tb,
+                sql_insert_vals,
+                sql_distinct_cb,
             ]
+
             async def _rebuild_sql(*args):
                 """Guard-обёртка: не перестраиваем SQL пока не выбраны schema/table."""
                 if not args[1] or not args[2]:  # schema or table empty
                     return ""
                 return await handle_sql_build(*args)
 
-            for ctrl in [sql_stmt_type, sql_cols_cb, sql_where_tb, sql_order_tb,
-                         sql_group_tb, sql_having_tb, sql_limit_nb, sql_join_type,
-                         sql_join_table, sql_join_on, sql_set_tb, sql_insert_vals,
-                         sql_distinct_cb]:
+            for ctrl in [
+                sql_stmt_type,
+                sql_cols_cb,
+                sql_where_tb,
+                sql_order_tb,
+                sql_group_tb,
+                sql_having_tb,
+                sql_limit_nb,
+                sql_join_type,
+                sql_join_table,
+                sql_join_on,
+                sql_set_tb,
+                sql_insert_vals,
+                sql_distinct_cb,
+            ]:
                 ctrl.change(fn=_rebuild_sql, inputs=_sql_builder_inputs, outputs=sql_editor)
             # Stmt type change → toggle UI sections
-            sql_stmt_type.change(fn=handle_stmt_type_ui, inputs=sql_stmt_type, outputs=[
-                sql_cols_section, sql_where_section, sql_order_section,
-                sql_group_section, sql_having_section, sql_limit_section,
-                sql_joins_section, sql_distinct_cb, sql_insert_section,
-                sql_update_section, sql_delete_info,
-            ])
+            sql_stmt_type.change(
+                fn=handle_stmt_type_ui,
+                inputs=sql_stmt_type,
+                outputs=[
+                    sql_cols_section,
+                    sql_where_section,
+                    sql_order_section,
+                    sql_group_section,
+                    sql_having_section,
+                    sql_limit_section,
+                    sql_joins_section,
+                    sql_distinct_cb,
+                    sql_insert_section,
+                    sql_update_section,
+                    sql_delete_info,
+                ],
+            )
             # Column selection updates SQL (auto-built via _rebuild_sql)
             # Action buttons
             _sql_run_btn.click(fn=handle_sql_execute, inputs=sql_editor, outputs=_sql_result)
@@ -2260,6 +2386,17 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
         queue=False,
     )
     pw_change_no.click(fn=cancel_pw_change, outputs=[pw_change_modal, pw_change_new, pw_change_confirm, pw_change_status], queue=False)
+
+    # Auto-connect confirmation
+    connect_confirm_yes.click(
+        fn=confirm_auto_connect,
+        inputs=[_connect_pending_url, _connect_pending_db],
+        outputs=[connect_confirm_modal, status_display, connect_btn, discover_btn, disconnect_btn],
+    )
+    connect_confirm_no.click(
+        fn=cancel_auto_connect,
+        outputs=[connect_confirm_modal, status_display, connect_btn, discover_btn, disconnect_btn],
+    )
 
     gr.Markdown("---\n*PostgreSQL MCP Autonomous \u2014 Standalone. No subscriptions. Source code available.*")
 
