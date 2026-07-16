@@ -677,23 +677,14 @@ async def handle_discover(url: str) -> tuple[str, dict]:
     )
 
 
-def handle_db_select(db_name: str, current_url: str) -> tuple:
-    """Handle database selection from the dropdown.
-
-    Returns: (updated_url, modal_visibility, pending_url, pending_db, info_text)
-    """
+def handle_db_select(db_name: str, current_url: str) -> str:
+    """Handle database selection — update URL with chosen database name."""
     if not db_name:
-        return current_url, gr.update(visible=False), "", "", gr.update()
+        return current_url
     if db_name.startswith("\u2705 "):
         db_name = db_name[2:]
     idx = current_url.rfind("/")
-    new_url = current_url[: idx + 1] + db_name if idx > 8 else current_url
-
-    if AUTO_CONNECT_DIALOG:
-        info = f"**Database:** `{db_name}`\n**URL:** `{new_url}`"
-        return new_url, gr.update(visible=True), new_url, db_name, info
-
-    return new_url, gr.update(visible=False), "", "", gr.update()
+    return current_url[: idx + 1] + db_name if idx > 8 else current_url
 
 
 async def handle_connect(url: str, selected_db: str) -> tuple[str, dict, dict, dict]:
@@ -1743,7 +1734,19 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
     def cancel_pw_change():
         return gr.update(visible=False), "", "", ""
 
-    # --- Connect confirmation handlers ---
+    # --- Database quick-connect button (next to dropdown) + confirmation dialog ---
+    async def handle_db_connect_btn(url: str, db_name: str) -> tuple:
+        """Connect button next to Database dropdown."""
+        target = url.strip()
+        idx = target.rfind("/")
+        if idx <= 8 and db_name:
+            target = f"{target.rstrip('/')}/{db_name}"
+        if AUTO_CONNECT_DIALOG:
+            info = f"**Database:** `{db_name or '(default)'}`\n**URL:** `{target}`"
+            return gr.update(visible=True), "", gr.update(), gr.update(), gr.update(), target, db_name or "", info
+        result = await handle_connect(url, db_name)
+        return gr.update(visible=False), *result, "", "", gr.update()
+
     async def confirm_auto_connect(pending_url: str, pending_db: str) -> tuple:
         if not pending_url or not pending_db:
             return gr.update(visible=False), "No database selected", *_conn_btns(pg.is_connected)
@@ -1813,6 +1816,7 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
                         allow_custom_value=True,
                         elem_classes="saved-dd",
                     )
+                    db_connect_btn = gr.Button("\U0001f535", size="sm", scale=1, min_width=40, elem_classes="icon-btn")
                 with gr.Row():
                     label_input = gr.Textbox(label="Connection name", placeholder="My label or URL", scale=2, value=initial_key)
                     tag_input = gr.Textbox(label="Tags", placeholder="tag1, tag2, ...", scale=1)
@@ -1931,10 +1935,11 @@ with gr.Blocks(title=APP_TITLE, css=BLOCKS_CSS, theme=THEME) as app:
             test_btn.click(fn=handle_test_connection, inputs=url_input, outputs=status_display)
             connect_btn.click(fn=handle_connect, inputs=[url_input, db_selector], outputs=[status_display, connect_btn, discover_btn, disconnect_btn])
             disconnect_btn.click(fn=handle_disconnect, outputs=[status_display, connect_btn, discover_btn, disconnect_btn])
-            db_selector.change(
-                fn=handle_db_select,
-                inputs=[db_selector, url_input],
-                outputs=[url_input, connect_confirm_modal, _connect_pending_url, _connect_pending_db, connect_confirm_info],
+            db_selector.change(fn=handle_db_select, inputs=[db_selector, url_input], outputs=url_input, queue=False)
+            db_connect_btn.click(
+                fn=handle_db_connect_btn,
+                inputs=[url_input, db_selector],
+                outputs=[connect_confirm_modal, status_display, connect_btn, discover_btn, disconnect_btn, _connect_pending_url, _connect_pending_db, connect_confirm_info],
             )
             show_value_cb.change(fn=handle_show_value_toggle, inputs=[show_value_cb, saved_dd], outputs=saved_dd, queue=False)
             show_value_cb.change(fn=lambda v: save_env_file({"SHOW_VALUE": str(v).lower()}) or None, inputs=show_value_cb, outputs=[], queue=False)
