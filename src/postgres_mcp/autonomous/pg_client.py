@@ -147,7 +147,15 @@ class PostgresClient:
 
     async def disconnect(self):
         if self._pool:
-            await self._pool.close()
+            try:
+                await self._pool.close()
+            except (RuntimeError, AttributeError):
+                # Event loop may be closed (Gradio recycles loops on restart).
+                # Fall back to synchronous terminate() which doesn't need the loop.
+                try:
+                    self._pool.terminate()
+                except Exception:
+                    pass
             self._pool = None
             self._current_url = None
 
